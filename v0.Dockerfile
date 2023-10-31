@@ -8,7 +8,7 @@ FROM quay.io/centos/centos:stream8
 
 RUN dnf install -y git glibc make
 COPY --from=builder /src/github.com/openshift/operator-framework-tooling/v0 /usr/bin/bumper
-COPY --from=builder /usr/bin/go /usr/bin/go
+COPY --from=builder /usr/lib/golang/bin/go /usr/bin/go
 COPY --from=builder /usr/lib/golang /usr/lib/golang
 
 ENTRYPOINT ["bumper"]

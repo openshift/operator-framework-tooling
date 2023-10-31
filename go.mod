@@ -1,4 +1,4 @@
-module github.com/openshift/operator-framework-olm/scripts/bumper
+module github.com/openshift/operator-framework-tooling
 
 go 1.20
 

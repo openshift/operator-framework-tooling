@@ -265,7 +265,6 @@ type commit struct {
 	Repo    string    `json:"repo,omitempty"`
 }
 
-var repoRegex = regexp.MustCompile(`Upstream-repository: ([^ ]+)\n`)
 var commitRegex = regexp.MustCompile(`Upstream-commit: ([a-f0-9]+)\n`)
 
 func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, centralRef string, mode fetchMode, history int) ([]commit, error) {

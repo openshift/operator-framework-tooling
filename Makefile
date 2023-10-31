@@ -2,11 +2,11 @@ include .bingo/Variables.mk
 
 .PHONY: test
 test:
-	go test ./...
+	go test -mod=mod ./...
 
 .PHONY: build
 build:
-	go build ./cmd/...
+	go build -mod=mod ./cmd/...
 
 .PHONY: lint
 lint: $(GOLANGCI_LINT)

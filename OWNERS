@@ -1,0 +1,12 @@
+approvers:
+- catalogd-approvers
+- operator-runtime-approvers
+- rukpak-approvers
+
+reviewers:
+- catalogd-approvers
+- catalogd-reviewers
+- operator-runtime-approvers
+- operator-runtime-reviewers
+- rukpak-approvers
+- rukpak-reviewers

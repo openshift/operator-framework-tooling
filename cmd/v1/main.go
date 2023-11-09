@@ -6,13 +6,13 @@ import (
 	"os"
 	"os/signal"
 
-	v0 "github.com/openshift/operator-framework-tooling/pkg/v0"
+	v1 "github.com/openshift/operator-framework-tooling/pkg/v1"
 	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	logger := logrus.New()
-	opts := v0.DefaultOptions()
+	opts := v1.DefaultOptions()
 	opts.Bind(flag.CommandLine)
 	flag.Parse()
 
@@ -26,7 +26,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	if err := v0.Run(ctx, logger, opts); err != nil {
+	if err := v1.Run(ctx, logger, opts); err != nil {
 		logrus.WithError(err).Fatal("failed to execute")
 	}
 }

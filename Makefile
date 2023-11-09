@@ -6,7 +6,7 @@ test:
 
 .PHONY: build
 build:
-	go build -mod=mod ./cmd/...
+	go build -o ./ -mod=mod ./cmd/...
 
 .PHONY: lint
 lint: $(GOLANGCI_LINT)

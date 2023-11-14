@@ -19,5 +19,5 @@
 
 # Go workspace file
 go.work
-v0
-v1
+/v0
+/v1

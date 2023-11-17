@@ -161,7 +161,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		stderr := bumper.HideSecretsWriter{Delegate: os.Stderr, Censor: secret.Censor}
 
 		remoteBranch := "synchronize-upstream"
-		title := "Synchronize From Upstream Repositories"
+		title := "NO-ISSUE: Synchronize From Upstream Repositories"
 		for repo, config := range commits {
 			fork, err := client.EnsureFork(opts.GithubLogin, "openshift", "operator-framework-"+repo)
 			if err != nil {

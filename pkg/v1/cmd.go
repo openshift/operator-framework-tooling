@@ -509,6 +509,19 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, dir string, config C
 				"--message", "UPSTREAM: <drop>: generate manifests"},
 				commitArgs...)...,
 		), dir),
+		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+			"rm", "-rf", ".github",
+		), dir), os.Environ()...),
+		internal.WithDir(exec.CommandContext(ctx,
+			"git", "add", "--force",
+			".github",
+		), dir),
+		internal.WithDir(exec.CommandContext(ctx,
+			"git", append([]string{"commit",
+				".github",
+				"--message", "UPSTREAM: <drop>: remove upstream GitHub configuration"},
+				commitArgs...)...,
+		), dir),
 	} {
 		if _, err := internal.RunCommand(logger, cmd); err != nil {
 			return err

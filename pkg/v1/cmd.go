@@ -161,7 +161,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		stderr := bumper.HideSecretsWriter{Delegate: os.Stderr, Censor: secret.Censor}
 
 		remoteBranch := "synchronize-upstream"
-		title := "Synchronize From Upstream Repositories"
+		title := "NO-ISSUE: Synchronize From Upstream Repositories"
 		for repo, config := range commits {
 			fork, err := client.EnsureFork(opts.GithubLogin, "openshift", "operator-framework-"+repo)
 			if err != nil {
@@ -507,6 +507,19 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, dir string, config C
 			"git", append([]string{"commit",
 				"openshift/manifests",
 				"--message", "UPSTREAM: <drop>: generate manifests"},
+				commitArgs...)...,
+		), dir),
+		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+			"rm", "-rf", ".github",
+		), dir), os.Environ()...),
+		internal.WithDir(exec.CommandContext(ctx,
+			"git", "add", "--force",
+			".github",
+		), dir),
+		internal.WithDir(exec.CommandContext(ctx,
+			"git", append([]string{"commit",
+				".github",
+				"--message", "UPSTREAM: <drop>: remove upstream GitHub configuration"},
 				commitArgs...)...,
 		), dir),
 	} {

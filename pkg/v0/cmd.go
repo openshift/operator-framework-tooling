@@ -136,7 +136,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		stderr := bumper.HideSecretsWriter{Delegate: os.Stderr, Censor: secret.Censor}
 
 		remoteBranch := "synchronize-upstream"
-		title := "Synchronize From Upstream Repositories"
+		title := "NO-ISSUE: Synchronize From Upstream Repositories"
 		if err := bumper.MinimalGitPush(fmt.Sprintf("https://%s:%s@github.com/%s/%s.git", opts.GithubLogin,
 			string(secret.GetTokenGenerator(opts.GitHubOptions.TokenPath)()), opts.GithubLogin, opts.GithubRepo),
 			remoteBranch, stdout, stderr, opts.DryRun); err != nil {

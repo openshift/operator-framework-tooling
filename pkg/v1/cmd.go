@@ -17,6 +17,7 @@ import (
 	"k8s.io/test-infra/prow/cmd/generic-autobumper/bumper"
 	"k8s.io/test-infra/prow/config/secret"
 	"k8s.io/test-infra/prow/labels"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -109,7 +110,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 		for repo, config := range commits {
 			commitLogger := logger.WithField("repo", repo)
-			if err := applyConfig(ctx, commitLogger, directories[repo], config, opts.GitCommitArgs()); err != nil {
+			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", directories[repo], config, opts.GitCommitArgs()); err != nil {
 				logger.WithError(err).Fatal("failed to merge to upstream")
 			}
 		}
@@ -438,13 +439,13 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 	return downstreamCommits, nil
 }
 
-func applyConfig(ctx context.Context, logger *logrus.Entry, dir string, config Config, commitArgs []string) error {
+func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string) error {
 	// first, get us to the upstream target
 	for _, cmd := range [][]string{
-		{"git", "checkout", "main"},
+		{"git", "checkout", branch},
 		{"git", "branch", "synchronize", "--force", config.Target.Hash},
 		{"git", "checkout", "synchronize"},
-		append([]string{"git", "merge", "--strategy", "ours", "main"}, commitArgs...),
+		append([]string{"git", "merge", "--strategy", "ours", branch}, commitArgs...),
 	} {
 		if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 			cmd[0], cmd[1:]...,
@@ -527,7 +528,8 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, dir string, config C
 			return err
 		}
 	}
-	return nil
+
+	return writeCommitCheckerFile(ctx, logger, org, repo, branch, config.Target.Hash, dir, commitArgs)
 }
 
 func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits map[string]string, commitArgs []string) error {
@@ -560,6 +562,54 @@ func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits
 			"git", append([]string{"commit",
 				"vendor", "go.mod", "go.sum",
 				"--message", "UPSTREAM: <drop>: rewrite go mod"},
+				commitArgs...)...,
+		),
+	} {
+		if _, err := internal.RunCommand(logger, internal.WithDir(cmd, dir)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeCommitCheckerFile(ctx context.Context, logger *logrus.Entry, org, repo, branch, expectedMergeBase, dir string, commitArgs []string) error {
+	// TODO: move the upstream commit-checker code out of `main` package so we can import this and the regex
+	var config = struct {
+		// UpstreamOrg is the organization of the upstream repository
+		UpstreamOrg string `json:"upstreamOrg,omitempty"`
+		// UpstreamRepo is the repo name of the upstream repository
+		UpstreamRepo string `json:"upstreamRepo,omitempty"`
+		// UpstreamBranch is the branch from the upstream repository we're tracking
+		UpstreamBranch string `json:"upstreamBranch,omitempty"`
+		// ExpectedMergeBase is the latest commit from the upstream that is expected to be present in this downstream
+		ExpectedMergeBase string `json:"expectedMergeBase,omitempty"`
+	}{
+		UpstreamOrg:       org,
+		UpstreamRepo:      repo,
+		UpstreamBranch:    branch,
+		ExpectedMergeBase: expectedMergeBase,
+	}
+
+	raw, err := yaml.Marshal(&config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal commit checker config: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "commitchecker.yaml"), raw, 0666); err != nil {
+		return fmt.Errorf("failed to write commit checker config: %w", err)
+	}
+
+	for _, cmd := range []*exec.Cmd{
+		// git commit with filenames does not require staging, but since these repos
+		// choose to put vendor in gitignore, we need git add --force to stage those
+		exec.CommandContext(ctx,
+			"git", "add", "--force",
+			"commitchecker.yaml",
+		),
+		exec.CommandContext(ctx,
+			"git", append([]string{"commit",
+				"commitchecker.yaml",
+				"--message", "UPSTREAM: <drop>: configure the commit-checker"},
 				commitArgs...)...,
 		),
 	} {

@@ -52,21 +52,24 @@ type Options struct {
 	SelfApprove  bool
 	PRBaseBranch string
 
+	DelayManifestGeneration bool
+
 	flagutil.GitHubOptions
 }
 
 func DefaultOptions() Options {
 	return Options{
-		Mode:         string(Summarize),
-		LogLevel:     logrus.InfoLevel.String(),
-		FetchMode:    string(SSH),
-		DryRun:       true,
-		GithubLogin:  GithubLogin,
-		GithubOrg:    GithubOrg,
-		GitSignoff:   false,
-		Assign:       DefaultPRAssignee,
-		SelfApprove:  false,
-		PRBaseBranch: DefaultBaseBranch,
+		Mode:                    string(Summarize),
+		LogLevel:                logrus.InfoLevel.String(),
+		FetchMode:               string(SSH),
+		DryRun:                  true,
+		GithubLogin:             GithubLogin,
+		GithubOrg:               GithubOrg,
+		GitSignoff:              false,
+		Assign:                  DefaultPRAssignee,
+		SelfApprove:             false,
+		PRBaseBranch:            DefaultBaseBranch,
+		DelayManifestGeneration: false,
 	}
 }
 
@@ -87,6 +90,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.Assign, "assign", o.Assign, "The comma-delimited set of github usernames or group names to assign the created pull request to.")
 	fs.BoolVar(&o.SelfApprove, "self-approve", o.SelfApprove, "Self-approve the PR by adding the `approved` and `lgtm` labels. Requires write permissions on the repo.")
 	fs.StringVar(&o.PRBaseBranch, "pr-base-branch", o.PRBaseBranch, "The base branch to use for the pull request.")
+	fs.BoolVar(&o.DelayManifestGeneration, "delay-manifest-generation", o.DelayManifestGeneration, "Delay manifest generation until the end.")
 	o.GitHubOptions.AddFlags(fs)
 	o.GitHubOptions.AllowAnonymous = true
 }

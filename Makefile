@@ -1,3 +1,5 @@
+default: build
+
 include .bingo/Variables.mk
 
 .PHONY: test

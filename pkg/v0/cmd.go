@@ -108,7 +108,11 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		for i, commit := range missingCommits {
 			commitLogger := logger.WithField("commit", commit.Hash)
 			commitLogger.Infof("cherry-picking commit %d/%d", i+1, len(missingCommits))
-			if err := cherryPick(ctx, commitLogger, commit, opts.GitCommitArgs()); err != nil {
+			delay := opts.DelayManifestGeneration
+			if i+1 == len(missingCommits) {
+				delay = false
+			}
+			if err := cherryPick(ctx, commitLogger, commit, opts.GitCommitArgs(), delay); err != nil {
 				logger.WithError(err).Fatal("failed to cherry-pick commit")
 			}
 		}
@@ -306,7 +310,7 @@ func isCommitMissing(ctx context.Context, logger *logrus.Entry, stagingDir strin
 	return len(output) == 0, nil
 }
 
-func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, commitArgs []string) error {
+func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, commitArgs []string, delayManifestGeneration bool) error {
 	{
 		output, err := internal.RunCommand(logger, exec.CommandContext(ctx,
 			"git", "cherry-pick",
@@ -332,7 +336,7 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 		}
 	}
 
-	for _, cmd := range []*exec.Cmd{
+	gomod := []*exec.Cmd{
 		internal.WithEnv(exec.CommandContext(ctx,
 			"go", "mod", "tidy",
 		), os.Environ()...),
@@ -351,9 +355,19 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
 			"go", "mod", "verify",
 		), os.Environ()...), filepath.Join("staging", c.Repo)),
+	}
+
+	manifests := []*exec.Cmd{
 		internal.WithEnv(exec.CommandContext(ctx,
 			"make", "generate-manifests",
 		), os.Environ()...),
+	}
+
+	commits := []*exec.Cmd{
+		// Necessary for untracked files created via `go mod vendor`
+		exec.CommandContext(ctx,
+			"git", "add", "vendor",
+		),
 		exec.CommandContext(ctx,
 			"git", append([]string{"commit",
 				"--amend", "--allow-empty", "--no-edit",
@@ -364,7 +378,15 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 				"manifests", "pkg/manifests"},
 				commitArgs...)...,
 		),
-	} {
+	}
+
+	commands := gomod
+	if !delayManifestGeneration {
+		commands = append(commands, manifests...)
+	}
+	commands = append(commands, commits...)
+
+	for _, cmd := range commands {
 		if _, err := internal.RunCommand(logger, cmd); err != nil {
 			return err
 		}

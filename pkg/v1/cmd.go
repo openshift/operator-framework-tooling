@@ -533,25 +533,25 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 }
 
 func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits map[string]string, commitArgs []string) error {
+	env := append(os.Environ(), "GOPROXY=direct")
 	for name, commit := range commits {
 		if _, err := internal.RunCommand(logger, internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"go", "mod", "edit", "-replace", fmt.Sprintf("github.com/operator-framework/%s=github.com/openshift/operator-framework-%s@%s", name, name, commit),
 		), dir), os.Environ()...)); err != nil {
 			return err
 		}
+		for _, cmd := range []*exec.Cmd{
+			exec.CommandContext(ctx, "go", "mod", "tidy"),
+			exec.CommandContext(ctx, "go", "mod", "vendor"),
+			exec.CommandContext(ctx, "go", "mod", "verify"),
+		} {
+			if _, err := internal.RunCommand(logger, internal.WithEnv(internal.WithDir(cmd, dir), env...)); err != nil {
+				return err
+			}
+		}
 	}
 
-	env := append(os.Environ(), "GOPROXY=direct")
 	for _, cmd := range []*exec.Cmd{
-		internal.WithEnv(exec.CommandContext(ctx,
-			"go", "mod", "tidy",
-		), env...),
-		internal.WithEnv(exec.CommandContext(ctx,
-			"go", "mod", "vendor",
-		), env...),
-		internal.WithEnv(exec.CommandContext(ctx,
-			"go", "mod", "verify",
-		), env...),
 		// git commit with filenames does not require staging, but since these repos
 		// choose to put vendor in gitignore, we need git add --force to stage those
 		internal.WithDir(exec.CommandContext(ctx,

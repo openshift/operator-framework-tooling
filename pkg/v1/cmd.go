@@ -239,7 +239,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 	}
 
 	target := map[string]Config{}
-	config, err := detectNewOperatorControllerCommits(ctx, logger, directories["operator-controller"], mode)
+	config, err, upToDate := detectNewOperatorControllerCommits(ctx, logger, directories["operator-controller"], mode)
 	if err != nil {
 		return nil, err
 	}
@@ -247,10 +247,12 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		target["operator-controller"] = *config
 	}
 
-	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-		"git", "checkout", target["operator-controller"].Target.Hash,
-	), directories["operator-controller"])); err != nil {
-		return nil, fmt.Errorf("failed to check out upstream target: %w", err)
+	if !upToDate {
+		if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+			"git", "checkout", target["operator-controller"].Target.Hash,
+		), directories["operator-controller"])); err != nil {
+			return nil, fmt.Errorf("failed to check out upstream target: %w", err)
+		}
 	}
 
 	for _, name := range []string{"rukpak", "catalogd"} {
@@ -313,30 +315,30 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 	return target, nil
 }
 
-func detectNewOperatorControllerCommits(ctx context.Context, logger *logrus.Entry, dir string, mode flags.FetchMode) (*Config, error) {
+func detectNewOperatorControllerCommits(ctx context.Context, logger *logrus.Entry, dir string, mode flags.FetchMode) (*Config, error, bool) {
 	commitSha, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 		"git", "rev-parse", "FETCH_HEAD",
 	), dir))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse upstream HEAD: %w", err)
+		return nil, fmt.Errorf("failed to parse upstream HEAD: %w", err), false
 	}
 	commitSha = strings.TrimSpace(commitSha)
 	logger.WithFields(logrus.Fields{"repo": "operator-controller", "commit": commitSha}).Info("resolved latest commit")
 	commit, err := internal.Info(ctx, logger, commitSha, dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to determine commit info: %w", err)
+		return nil, fmt.Errorf("failed to determine commit info: %w", err), false
 	}
 	if isUpToDate(ctx, logger, "operator-controller", dir, commit.Hash) {
-		return nil, nil
+		return nil, nil, true
 	}
 	additional, err := detectCarryCommits(ctx, logger, "operator-controller", dir, commit.Hash, mode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve additional commits: %w", err)
+		return nil, fmt.Errorf("failed to resolve additional commits: %w", err), false
 	}
 	return &Config{
 		Target:     commit,
 		Additional: additional,
-	}, nil
+	}, nil, false
 }
 
 func isUpToDate(ctx context.Context, logger *logrus.Entry, repo, dir, commit string) bool {
@@ -566,6 +568,10 @@ func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits
 		),
 	} {
 		if _, err := internal.RunCommand(logger, internal.WithDir(cmd, dir)); err != nil {
+			if strings.Contains(err.Error(), "nothing to commit, working tree clean") {
+				logger.Info("no go.mod changes to commit, continuing")
+				return nil
+			}
 			return err
 		}
 	}

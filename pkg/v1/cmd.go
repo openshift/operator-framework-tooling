@@ -535,7 +535,6 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 }
 
 func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits map[string]string, commitArgs []string) error {
-	env := append(os.Environ(), "GOPROXY=direct")
 	for name, commit := range commits {
 		if _, err := internal.RunCommand(logger, internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"go", "mod", "edit", "-replace", fmt.Sprintf("github.com/operator-framework/%s=github.com/openshift/operator-framework-%s@%s", name, name, commit),
@@ -547,7 +546,7 @@ func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits
 			exec.CommandContext(ctx, "go", "mod", "vendor"),
 			exec.CommandContext(ctx, "go", "mod", "verify"),
 		} {
-			if _, err := internal.RunCommand(logger, internal.WithEnv(internal.WithDir(cmd, dir), env...)); err != nil {
+			if _, err := internal.RunCommand(logger, internal.WithEnv(internal.WithDir(cmd, dir), os.Environ()...)); err != nil {
 				return err
 			}
 		}

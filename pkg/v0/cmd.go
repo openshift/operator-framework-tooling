@@ -375,7 +375,7 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 				"--trailer", "Upstream-commit: " + c.Hash,
 				"staging/" + c.Repo,
 				"vendor", "go.mod", "go.sum",
-				"manifests", "pkg/manifests"},
+				"manifests", "microshift-manifests", "pkg/manifests"},
 				commitArgs...)...,
 		),
 	}

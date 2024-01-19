@@ -6,7 +6,7 @@ COPY ./pkg/ ./pkg/
 COPY go.mod ./
 RUN go build -o v0 -mod=mod ./cmd/v0/...
 
-FROM quay.io/centos/centos:stream8
+FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
 
 RUN dnf install -y git glibc make
 COPY --from=builder /src/github.com/openshift/operator-framework-tooling/v0 /usr/bin/bumper

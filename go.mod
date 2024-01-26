@@ -5,6 +5,7 @@ go 1.21
 toolchain go1.21.8
 
 require (
+	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/sirupsen/logrus v1.9.3
 	k8s.io/test-infra v0.0.0-20231113160404-5e84733188ea
 	sigs.k8s.io/yaml v1.3.0

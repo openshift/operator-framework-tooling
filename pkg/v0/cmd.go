@@ -175,9 +175,9 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 		if path == "." {
 			return nil
 		}
-		logger = logger.WithField("repo", path)
-		logger.Debug("detecting commits")
-		output, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+		walkLogger := logger.WithField("repo", path)
+		walkLogger.Debug("detecting commits")
+		output, err := internal.RunCommand(walkLogger, exec.CommandContext(ctx,
 			"git", "log",
 			centralRef,
 			"-n", strconv.Itoa(history),
@@ -200,8 +200,10 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 			}
 		}
 		if lastCommit != "" {
-			logger.WithField("commit", lastCommit).Debug("found last commit synchronized with staging")
+			walkLogger.WithField("commit", lastCommit).Debug("found last commit synchronized with staging")
 			lastCommits[path] = lastCommit
+		} else {
+			walkLogger.Fatal("did not find the last commit synchronized with stagging")
 		}
 
 		if path != "." {
@@ -214,6 +216,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 
 	commits := map[string][]internal.Commit{}
 	for repo, lastCommit := range lastCommits {
+		repoLogger := logger.WithField("repo", repo)
 		var remote string
 		switch mode {
 		case flags.SSH:
@@ -221,7 +224,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 		case flags.HTTPS:
 			remote = "https://github.com/operator-framework/" + repo + ".git"
 		}
-		if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+		if _, err := internal.RunCommand(repoLogger, exec.CommandContext(ctx,
 			"git", "fetch",
 			remote,
 			"master",
@@ -229,7 +232,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 			return nil, err
 		}
 
-		output, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+		output, err := internal.RunCommand(repoLogger, exec.CommandContext(ctx,
 			"git", "log",
 			"--pretty=%H",
 			"--no-merges",
@@ -242,7 +245,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 		for _, line := range strings.Split(output, "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" {
-				commit, err := internal.Info(ctx, logger, line, ".")
+				commit, err := internal.Info(ctx, repoLogger, line, ".")
 				if err != nil {
 					return nil, err
 				}
@@ -253,6 +256,16 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 				commits[repo] = append(commits[repo], commit)
 			}
 		}
+		if len(commits[repo]) > 0 {
+			repoLogger.WithField("commits", len(commits[repo])).Debug("found commits")
+		} else {
+			repoLogger.Debug("no commits found")
+		}
+	}
+	// No commits? No work.
+	if len(commits) == 0 {
+		logger.Debug("no commits found to merge over all repos")
+		return nil, nil
 	}
 	// we would like to intertwine the commits from each upstream repository by date, while
 	// keeping the order of commits from any one repository in the order they were committed in
@@ -265,6 +278,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 		// find which repo's commit stack we should pop off to get the next earliest commit
 		nextTime := time.Now()
 		var nextRepo string
+
 		for repo, index := range indices {
 			if commits[repo][index].Date.Before(nextTime) {
 				nextTime = commits[repo][index].Date

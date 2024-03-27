@@ -108,11 +108,13 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		for i, commit := range missingCommits {
 			commitLogger := logger.WithField("commit", commit.Hash)
 			commitLogger.Infof("cherry-picking commit %d/%d", i+1, len(missingCommits))
-			delay := opts.DelayManifestGeneration
+			delayManifests := opts.DelayManifestGeneration
+			delayGoMod := opts.DelayGoMod
 			if i+1 == len(missingCommits) {
-				delay = false
+				delayManifests = false
+				delayGoMod = false
 			}
-			if err := cherryPick(ctx, commitLogger, commit, opts.GitCommitArgs(), delay); err != nil {
+			if err := cherryPick(ctx, commitLogger, commit, opts.GitCommitArgs(), delayManifests, delayGoMod); err != nil {
 				logger.WithError(err).Fatal("failed to cherry-pick commit")
 			}
 		}
@@ -324,7 +326,7 @@ func isCommitMissing(ctx context.Context, logger *logrus.Entry, stagingDir strin
 	return len(output) == 0, nil
 }
 
-func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, commitArgs []string, delayManifestGeneration bool) error {
+func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, commitArgs []string, delayManifestGeneration bool, delayGoMod bool) error {
 	{
 		output, err := internal.RunCommand(logger, exec.CommandContext(ctx,
 			"git", "cherry-pick",
@@ -394,7 +396,10 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 		),
 	}
 
-	commands := gomod
+	var commands []*exec.Cmd
+	if !delayGoMod {
+		commands = append(commands, gomod...)
+	}
 	if !delayManifestGeneration {
 		commands = append(commands, manifests...)
 	}

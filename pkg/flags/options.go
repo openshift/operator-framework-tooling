@@ -53,6 +53,7 @@ type Options struct {
 	PRBaseBranch string
 
 	DelayManifestGeneration bool
+	DelayGoMod              bool
 
 	flagutil.GitHubOptions
 }
@@ -70,6 +71,7 @@ func DefaultOptions() Options {
 		SelfApprove:             false,
 		PRBaseBranch:            DefaultBaseBranch,
 		DelayManifestGeneration: false,
+		DelayGoMod:              false,
 	}
 }
 
@@ -91,6 +93,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.BoolVar(&o.SelfApprove, "self-approve", o.SelfApprove, "Self-approve the PR by adding the `approved` and `lgtm` labels. Requires write permissions on the repo.")
 	fs.StringVar(&o.PRBaseBranch, "pr-base-branch", o.PRBaseBranch, "The base branch to use for the pull request.")
 	fs.BoolVar(&o.DelayManifestGeneration, "delay-manifest-generation", o.DelayManifestGeneration, "Delay manifest generation until the end.")
+	fs.BoolVar(&o.DelayGoMod, "delay-go-mod", o.DelayGoMod, "Delay running 'go mod' commands until the end.")
 	o.GitHubOptions.AddFlags(fs)
 	o.GitHubOptions.AllowAnonymous = true
 }

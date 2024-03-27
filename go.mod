@@ -1,6 +1,8 @@
 module github.com/openshift/operator-framework-tooling
 
-go 1.20
+go 1.21
+
+toolchain go1.21.8
 
 require (
 	github.com/sirupsen/logrus v1.9.3

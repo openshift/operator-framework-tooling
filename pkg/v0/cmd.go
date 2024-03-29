@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	semver "github.com/Masterminds/semver/v3"
 	"github.com/openshift/operator-framework-tooling/pkg/flags"
 	"github.com/openshift/operator-framework-tooling/pkg/internal"
 	"github.com/sirupsen/logrus"
@@ -26,6 +27,11 @@ const (
 	githubRepo = "operator-framework-olm"
 )
 
+var depRepos = []string{
+	"operator-framework/api",
+	"operator-framework/operator-registry",
+}
+
 func DefaultOptions() Options {
 	opts := Options{
 		stagingDir: "staging/",
@@ -34,6 +40,7 @@ func DefaultOptions() Options {
 		Options:    flags.DefaultOptions(),
 	}
 	opts.Options.GithubRepo = githubRepo
+	opts.Options.DelayManifestGeneration = true
 	return opts
 }
 
@@ -63,7 +70,6 @@ func (o *Options) Validate() error {
 
 func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	var commits []internal.Commit
-	var err error
 	if opts.CommitFileInput != "" {
 		rawCommits, err := os.ReadFile(opts.CommitFileInput)
 		if err != nil {
@@ -73,7 +79,11 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			return fmt.Errorf("could not unmarshal input commits: %w", err)
 		}
 	} else {
-		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), opts.stagingDir, opts.centralRef, flags.FetchMode(opts.FetchMode), opts.history)
+		repoRefs, err := calculateRepoRefs(ctx, logger.WithField("phase", "calculate refs"), opts)
+		if err != nil {
+			logger.WithError(err).Fatal("failed to determine repository references")
+		}
+		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), opts.stagingDir, opts.centralRef, repoRefs, flags.FetchMode(opts.FetchMode), opts.history)
 		if err != nil {
 			logger.WithError(err).Fatal("failed to detect commits")
 		}
@@ -106,10 +116,11 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			logger.WithError(err).Fatal("failed to set committer")
 		}
 		for i, commit := range missingCommits {
-			commitLogger := logger.WithField("commit", commit.Hash)
+			commitLogger := logger.WithField("commit", commit.Hash).WithField("repo", commit.Repo)
 			commitLogger.Infof("cherry-picking commit %d/%d", i+1, len(missingCommits))
 			delay := opts.DelayManifestGeneration
 			if i+1 == len(missingCommits) {
+				// we are on the last commit, we need to run the delayed commands
 				delay = false
 			}
 			if err := cherryPick(ctx, commitLogger, commit, opts.GitCommitArgs(), delay); err != nil {
@@ -160,9 +171,127 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	return nil
 }
 
+func getTagOrCommit(ctx context.Context, repo string, dir string, opts Options, logger *logrus.Entry) (string, error) {
+
+	// Create temporary
+
+	module := fmt.Sprintf("github.com/%s", repo)
+	rawInfo, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+		"go", "list", "-json", "-m", module), dir))
+	if err != nil {
+		return "", fmt.Errorf("failed to determine dependent version for module %s: %w", module, err)
+	}
+	var info struct {
+		Version string `json:"Version"`
+	}
+	if  err := json.Unmarshal([]byte(rawInfo), &info); err != nil {
+		return "", fmt.Errorf("failed to parse module version for %s: %w", module, err)
+	}
+	logger.WithFields(logrus.Fields{"repo": repo, "version": info.Version}).Info("resolved latest version")
+
+	v, err := semver.NewVersion(info.Version)
+	if err != nil {
+		return "", err
+	}
+	// If this does not have a Prerelease, then we just return the version string
+	pre := v.Prerelease()
+	if pre == "" {
+		return info.Version, nil
+	}
+	// It's a pre-release version, which we assume is in DATE-COMMIT format
+	pres := strings.Split(pre, "-")
+	if len(pres) != 2 {
+		return "", fmt.Errorf("Bad prerelease: %q", info.Version)
+	}
+	// Return the second component, which is a commit SHA
+	return pres[1], nil
+}
+
+func calculateRepoRefs(ctx context.Context, logger *logrus.Entry, opts Options) (map[string]string, error) {
+	repoRefs := map[string]string{}
+
+	// for operator-lifecycle-manager, always use master
+	repoRefs["operator-framework/operator-lifecycle-manager"] = "master"
+
+	// Create a temporary worktree of upstream OLM to figure out what dependency versions we are moving to
+	var remote string
+
+	switch flags.FetchMode(opts.FetchMode) {
+	case flags.SSH:
+		remote = "git@github.com:operator-framework/operator-lifecycle-manager"
+	case flags.HTTPS:
+		remote = "https://github.com/operator-framework/operator-lifecycle-manager.git"
+	}
+	if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+		"git", "fetch",
+		remote,
+		"master",
+	)); err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp("", "olm")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+		"git", "worktree",
+		"add",
+		dir,
+		"FETCH_HEAD",
+	)); err != nil {
+		return nil, err
+	}
+
+	for _, repo := range depRepos {
+		tag, err := getTagOrCommit(ctx, repo, dir, opts, logger.WithField("phase", "version scan"))
+		if err != nil {
+			logger.Fatalf("Error processing version for %q: %v", repo, err)
+			continue
+		}
+
+		var remote string
+		switch flags.FetchMode(opts.FetchMode) {
+		case flags.SSH:
+			remote = "git@github.com:" + repo
+		case flags.HTTPS:
+			remote = "https://github.com/" + repo + ".git"
+		}
+		if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+			"git", "fetch",
+			remote,
+			tag,
+		)); err != nil {
+			return nil, err
+		}
+		output, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+			"git", "log",
+			"-n", "1",
+			"--pretty=%H",
+			"--no-merges",
+			"FETCH_HEAD",
+		))
+		if err != nil {
+			return nil, err
+		}
+		repoRefs[repo] = strings.TrimSpace(output)
+		if repoRefs[repo] == "" {
+			return nil, fmt.Errorf("unable to find commit at %q for %q", tag, repo)
+		}
+
+		repoLogger := logger.WithField("repo", repo).WithField("commit", repoRefs[repo])
+		if tag == repoRefs[repo] {
+			repoLogger.Info("found commit")
+		} else {
+			repoLogger.WithField("tag", tag).Info("mapped tag to commit")
+		}
+	}
+	return repoRefs, nil
+}
+
 var commitRegex = regexp.MustCompile(`Upstream-commit: ([a-f0-9]+)\n`)
 
-func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, centralRef string, mode flags.FetchMode, history int) ([]internal.Commit, error) {
+func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, centralRef string, repoRefs map[string]string, mode flags.FetchMode, history int) ([]internal.Commit, error) {
 	lastCommits := map[string]string{}
 	if err := fs.WalkDir(os.DirFS(stagingDir), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -224,10 +353,16 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 		case flags.HTTPS:
 			remote = "https://github.com/operator-framework/" + repo + ".git"
 		}
+
+		ref, ok := repoRefs["operator-framework/" + repo]
+		if !ok {
+			return nil, fmt.Errorf("ref not found for %q", repo)
+		}
+		repoLogger.WithField("ref", ref).Debug("found fetch reference")
 		if _, err := internal.RunCommand(repoLogger, exec.CommandContext(ctx,
 			"git", "fetch",
 			remote,
-			"master",
+			ref,
 		)); err != nil {
 			return nil, err
 		}
@@ -239,7 +374,35 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 			lastCommit+"...FETCH_HEAD",
 		))
 		if err != nil {
-			return nil, err
+			// This could be due to the lastCommit being beyond the tag, in this case,
+			// we'd see an "Invalid symmetric difference expression" error.
+			// If so, fetch the master branch, and then see if the latestCommit is in there.
+			// If it is, then downstream has moved beyond "where it should be".
+			// This is ok, we shouldn't error out
+			if !strings.Contains(output, "Invalid symmetric difference expression") {
+				return nil, err
+			}
+			repoLogger.Debug("checking if downtream has moved beyond expected commit")
+			if _, err2 := internal.RunCommand(repoLogger, exec.CommandContext(ctx,
+				"git", "fetch",
+				remote,
+				"master",
+			)); err2 != nil {
+				return nil, err2
+			}
+			if _, err2 := internal.RunCommand(repoLogger, exec.CommandContext(ctx,
+				"git", "log",
+				"--pretty=%H",
+				"--no-merges",
+				lastCommit+"...FETCH_HEAD",
+			)); err2 != nil {
+				// Still getting an error, so return the original `err`
+				return nil, err
+			}
+			// Otherwise, downstream is ahead of where it should be, so issue a warning
+			repoLogger.WithField("last-commit", lastCommit).WithField("expected", ref).Warn("downstream has moved beyond expected commit")
+			// And reset the output to blank
+			output = ""
 		}
 
 		for _, line := range strings.Split(output, "\n") {
@@ -360,15 +523,6 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 		internal.WithEnv(exec.CommandContext(ctx,
 			"go", "mod", "verify",
 		), os.Environ()...),
-		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
-			"go", "mod", "tidy",
-		), os.Environ()...), filepath.Join("staging", c.Repo)),
-		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
-			"go", "mod", "vendor",
-		), os.Environ()...), filepath.Join("staging", c.Repo)),
-		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
-			"go", "mod", "verify",
-		), os.Environ()...), filepath.Join("staging", c.Repo)),
 	}
 
 	manifests := []*exec.Cmd{

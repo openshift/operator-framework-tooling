@@ -68,6 +68,24 @@ func (o *Options) Validate() error {
 	return nil
 }
 
+func resolveCentralRef(ctx context.Context, logger *logrus.Entry, origCentralRef string) (string, error) {
+	output, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+		"git", "log",
+		"-n", "1",
+		"--pretty=%H",
+		origCentralRef,
+	))
+	if err != nil {
+		return "", err
+	}
+	newCentralRef := strings.TrimSpace(output)
+	if newCentralRef == "" {
+		return "", fmt.Errorf("resolved central-ref is empty")
+	}
+	logger.WithField("commit", newCentralRef).WithField("central-ref", origCentralRef).Debug("resolved central-ref")
+	return newCentralRef, nil
+}
+
 func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	var commits []internal.Commit
 	if opts.CommitFileInput != "" {
@@ -79,11 +97,17 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			return fmt.Errorf("could not unmarshal input commits: %w", err)
 		}
 	} else {
+		// if opts.centralRef is modified (i.e. FETCH_HEAD), calculateRepoRefs is going to mess up that calculation,
+		// so resolve opts.centralRef first
+		centralRef, err := resolveCentralRef(ctx, logger.WithField("phase", "resolve central-ref"), opts.centralRef)
+		if err != nil {
+			logger.WithError(err).Fatal("failed to resolve central-ref")
+		}
 		repoRefs, err := calculateRepoRefs(ctx, logger.WithField("phase", "calculate refs"), opts)
 		if err != nil {
 			logger.WithError(err).Fatal("failed to determine repository references")
 		}
-		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), opts.stagingDir, opts.centralRef, repoRefs, flags.FetchMode(opts.FetchMode), opts.history)
+		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), opts.stagingDir, centralRef, repoRefs, flags.FetchMode(opts.FetchMode), opts.history)
 		if err != nil {
 			logger.WithError(err).Fatal("failed to detect commits")
 		}
@@ -332,7 +356,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 			walkLogger.WithField("commit", lastCommit).Debug("found last commit synchronized with staging")
 			lastCommits[path] = lastCommit
 		} else {
-			walkLogger.Fatal("did not find the last commit synchronized with stagging")
+			walkLogger.Fatal("did not find the last commit synchronized with staging")
 		}
 
 		if path != "." {

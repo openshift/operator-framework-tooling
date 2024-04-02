@@ -526,6 +526,15 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 				)); err != nil {
 					return err
 				}
+				// Due to the `go mod` commands in the staging directory below, this file may have conflicts,
+				// So resolve it as "ours", and then use the `go mod` commands to update it
+				// Conflicts can arise due to downstream-only code in a staging directory affecting the
+				// `go mod` command results
+				if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+					"git", "checkout", "--ours", "--", "staging/"+c.Repo+"/go.mod",
+				)); err != nil {
+					return err
+				}
 				if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
 					"git", "cherry-pick", "--continue",
 				)); err != nil {
@@ -547,6 +556,15 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 		internal.WithEnv(exec.CommandContext(ctx,
 			"go", "mod", "verify",
 		), os.Environ()...),
+		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
+			"go", "mod", "tidy",
+		), os.Environ()...), filepath.Join("staging", c.Repo)),
+		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
+			"go", "mod", "vendor",
+		), os.Environ()...), filepath.Join("staging", c.Repo)),
+		internal.WithDir(internal.WithEnv(exec.CommandContext(ctx,
+			"go", "mod", "verify",
+		), os.Environ()...), filepath.Join("staging", c.Repo)),
 	}
 
 	manifests := []*exec.Cmd{

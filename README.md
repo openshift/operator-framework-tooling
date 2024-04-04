@@ -57,7 +57,7 @@ This tool is intended to be run as a periodic job with minimal human interaction
 
 The jobs are defined in:
 
-* [infra-periodics.yaml](https://github.com/stevekuznetsov/release/blob/master/ci-operator/jobs/infra-periodics.yaml)
+* [infra-periodics.yaml](https://github.com/openshift/release/blob/master/ci-operator/jobs/infra-periodics.yaml)
 
 ## Manual Merging
 

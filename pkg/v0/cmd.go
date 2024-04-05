@@ -519,22 +519,34 @@ func cherryPick(ctx context.Context, logger *logrus.Entry, c internal.Commit, co
 			"-Xsubtree=staging/"+c.Repo, c.Hash,
 		))
 		if err != nil {
+			continueCherryPick := false
 			if strings.Contains(output, "vendor/modules.txt deleted in HEAD and modified in") {
+				continueCherryPick = true
 				// we remove vendor directories for everything under staging/, but some of the upstream repos have them
 				if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
 					"git", "rm", "--cached", "-r", "--ignore-unmatch", "staging/"+c.Repo+"/vendor",
 				)); err != nil {
 					return err
 				}
+			}
+			if strings.Contains(output, "Merge conflict in staging/"+c.Repo+"/go.mod") {
+				continueCherryPick = true
 				// Due to the `go mod` commands in the staging directory below, this file may have conflicts,
-				// So resolve it as "ours", and then use the `go mod` commands to update it
+				// So resolve it as "theirs" (i.e. incoming), and then use the `go mod` commands to update it
 				// Conflicts can arise due to downstream-only code in a staging directory affecting the
 				// `go mod` command results
 				if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
-					"git", "checkout", "--ours", "--", "staging/"+c.Repo+"/go.mod",
+					"git", "checkout", "--theirs", "--", "staging/"+c.Repo+"/go.mod",
 				)); err != nil {
 					return err
 				}
+				if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
+					"git", "add", "staging/"+c.Repo+"/go.mod",
+				)); err != nil {
+					return err
+				}
+			}
+			if continueCherryPick {
 				if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
 					"git", "cherry-pick", "--continue",
 				)); err != nil {

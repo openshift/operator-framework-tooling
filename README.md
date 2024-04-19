@@ -14,7 +14,9 @@ The `operator-lifecycle-manager` repository is the main repository, as it refers
 
 The upstream repositories must also be `go mod tidy` clean.
 
-The downstream repository is a "monorepo" consisting of all the above repositories each located in a `staging` directory. The upstream commits are cherry-picked with updating comments indicating the source repository and commit SHA.
+The downstream repository is a "monorepo" consisting of all the above repositories each located in a `staging` directory. The upstream commits are cherry-picked with updating comments indicating the source repository and commit SHA. 
+
+In the monorepo there are individual Dockerfiles controlling downstream builds for each tool. For instance: https://github.com/openshift/operator-framework-olm/blob/master/operator-lifecycle-manager.Dockerfile
 
 ## OLMv1
 

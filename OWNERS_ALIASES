@@ -1,71 +1,28 @@
 aliases:
-  catalogd-approvers:
-  - awgreene
+  operator-framework-approvers:
   - grokspawn
-  - jmprusi
   - joelanford
   - kevinrizza
   - oceanc80
   - perdasilva
   - stevekuznetsov
+  - tmshort
 
-  catalogd-reviewers:
+  operator-framework-reviewers:
   - anik120
   - ankitathomas
-  - awgreene
+  - bentito
   - dtfranz
+  - everettraven
   - grokspawn
-  - jmprusi
   - joelanford
   - kevinrizza
   - m1kola
   - oceanc80
   - perdasilva
+  - rashmigottipati
   - stevekuznetsov
+  - theishshah
   - tmshort
-
-  operator-runtime-approvers:
-  - awgreene
-  - grokspawn
-  - jmprusi
-  - joelanford
-  - kevinrizza
-  - oceanc80
-  - perdasilva
-
-  operator-runtime-reviewers:
-  - anik120
-  - ankitathomas
-  - awgreene
-  - dtfranz
-  - grokspawn
-  - jmprusi
-  - joelanford
-  - kevinrizza
-  - m1kola
-  - oceanc80
-  - perdasilva
-  - tmshort
-
-  rukpak-approvers:
-  - awgreene
-  - grokspawn
-  - jmprusi
-  - joelanford
-  - kevinrizza
-  - oceanc80
-  - perdasilva
-
-  rukpak-reviewers:
-  - anik120
-  - ankitathomas
-  - awgreene
-  - dtfranz
-  - grokspawn
-  - jmprusi
-  - joelanford
-  - kevinrizza
-  - m1kola
-  - oceanc80
-  - perdasilva
-  - tmshort
+  - varshaprasad96
+  

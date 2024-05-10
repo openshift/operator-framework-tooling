@@ -465,10 +465,39 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 
 	// then, cherry-pick the additional bits
 	for _, commit := range config.Additional {
-		if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-			"git", "cherry-pick", commit.Hash,
-		), dir)); err != nil {
-			return err
+		for _, cmd := range []*exec.Cmd{
+			internal.WithDir(exec.CommandContext(ctx,
+				"git", "cherry-pick", commit.Hash,
+			), dir),
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"go", "mod", "tidy",
+			), filepath.Join(dir, "openshift")), os.Environ()...),
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"go", "mod", "vendor",
+			), filepath.Join(dir, "openshift")), os.Environ()...),
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"go", "mod", "verify",
+			), filepath.Join(dir, "openshift")), os.Environ()...),
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"make", "-f", "openshift/Makefile", "manifests",
+			), dir), os.Environ()...),
+			// git commit with filenames does not require staging, but since these repos
+			// choose to put vendor in gitignore, we need git add --force to stage those
+			internal.WithDir(exec.CommandContext(ctx,
+				"git", "add", "--force",
+				"openshift/vendor", "openshift/go.mod", "openshift/go.sum", "openshift/manifests",
+			), dir),
+			internal.WithDir(exec.CommandContext(ctx,
+				"git", append([]string{"commit",
+					"openshift/vendor", "openshift/go.mod", "openshift/go.sum", "openshift/manifests",
+					"--amend",
+					"--no-edit",
+				}, commitArgs...)...,
+			), dir),
+		} {
+			if _, err := internal.RunCommand(logger, cmd); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -483,40 +512,16 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"go", "mod", "verify",
 		), dir), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "tidy",
-		), filepath.Join(dir, "openshift")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "vendor",
-		), filepath.Join(dir, "openshift")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "verify",
-		), filepath.Join(dir, "openshift")), os.Environ()...),
 		// git commit with filenames does not require staging, but since these repos
 		// choose to put vendor in gitignore, we need git add --force to stage those
 		internal.WithDir(exec.CommandContext(ctx,
 			"git", "add", "--force",
 			"vendor", "go.mod", "go.sum",
-			"openshift/vendor", "openshift/go.mod", "openshift/go.sum",
 		), dir),
 		internal.WithDir(exec.CommandContext(ctx,
 			"git", append([]string{"commit",
 				"vendor", "go.mod", "go.sum",
-				"openshift/vendor", "openshift/go.mod", "openshift/go.sum",
 				"--message", "UPSTREAM: <drop>: go mod vendor"},
-				commitArgs...)...,
-		), dir),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"make", "-f", "openshift/Makefile", "manifests",
-		), dir), os.Environ()...),
-		internal.WithDir(exec.CommandContext(ctx,
-			"git", "add", "--force",
-			"openshift/manifests",
-		), dir),
-		internal.WithDir(exec.CommandContext(ctx,
-			"git", append([]string{"commit",
-				"openshift/manifests",
-				"--message", "UPSTREAM: <drop>: generate manifests"},
 				commitArgs...)...,
 		), dir),
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,

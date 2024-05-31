@@ -214,7 +214,7 @@ func determineDownstreamHead(ctx context.Context, logger *logrus.Entry, dir, rep
 	return strings.TrimSpace(commitSha), nil
 }
 
-var syntheticVersionRegex = regexp.MustCompile(`[^-]+-[0-9]+-([[0-9a-f]+)`)
+var syntheticVersionRegex = regexp.MustCompile(`[^-]+-(?:[0-9]+\.)[0-9]{14}-([0-9a-f]+)`)
 
 func upstreamRemote(repo string, mode flags.FetchMode) string {
 	switch mode {

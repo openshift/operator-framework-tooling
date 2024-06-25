@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -39,6 +40,8 @@ type Options struct {
 	operatorControllerDir string
 	catalogDDir           string
 
+	pauseOnCherryPickError bool
+
 	flags.Options
 }
 
@@ -46,6 +49,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.rukpakDir, "rukpak-dir", o.rukpakDir, "Directory for rukpak repository.")
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
 	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
+	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")
 
 	o.Options.Bind(fs)
 }
@@ -112,7 +116,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 		for repo, config := range commits {
 			commitLogger := logger.WithField("repo", repo)
-			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", directories[repo], config, opts.GitCommitArgs()); err != nil {
+			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", directories[repo], config, opts.GitCommitArgs(), opts.pauseOnCherryPickError); err != nil {
 				logger.WithError(err).Fatal("failed to merge to upstream")
 			}
 		}
@@ -448,7 +452,7 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 	return downstreamCommits, nil
 }
 
-func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string) error {
+func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string, pauseOnCherryPickError bool) error {
 	// first, get us to the upstream target
 	for _, cmd := range [][]string{
 		{"git", "checkout", branch},
@@ -465,7 +469,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 
 	// then, cherry-pick the additional bits
 	for _, commit := range config.Additional {
-		for _, cmd := range []*exec.Cmd{
+		for i, cmd := range []*exec.Cmd{
 			internal.WithDir(exec.CommandContext(ctx,
 				"git", "cherry-pick", commit.Hash,
 			), dir),
@@ -495,8 +499,17 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				}, commitArgs...)...,
 			), dir),
 		} {
-			if _, err := internal.RunCommand(logger, cmd); err != nil {
-				return err
+			if msg, err := internal.RunCommand(logger, cmd); err != nil {
+				if i == 0 && pauseOnCherryPickError {
+					fmt.Printf("Error during cherry-pick:\n%s", msg)
+					fmt.Print("Please resolve the cherry-pick conflict. <ENTER> to continue, 'q' to terminate>")
+					text, ioErr := bufio.NewReader(os.Stdin).ReadString('\n')
+					if ioErr != nil || strings.TrimSpace(text) == "q" {
+						return err
+					}
+				} else {
+					return err
+				}
 			}
 		}
 	}

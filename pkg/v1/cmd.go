@@ -191,7 +191,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				TideMergeMethodMergeLabel,
 			}
 			if opts.SelfApprove {
-				logger.Infof("Self-aproving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
+				logger.Infof("Self-approving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
 				labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)
 			}
 			if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, fork, title,

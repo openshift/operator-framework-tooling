@@ -184,7 +184,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 
 		var labelsToAdd []string
 		if opts.SelfApprove {
-			logger.Infof("Self-aproving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
+			logger.Infof("Self-approving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
 			labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)
 		}
 		if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, opts.GithubRepo, title,
@@ -208,7 +208,7 @@ func getTagOrCommit(ctx context.Context, repo string, dir string, opts Options, 
 	var info struct {
 		Version string `json:"Version"`
 	}
-	if  err := json.Unmarshal([]byte(rawInfo), &info); err != nil {
+	if err := json.Unmarshal([]byte(rawInfo), &info); err != nil {
 		return "", fmt.Errorf("failed to parse module version for %s: %w", module, err)
 	}
 	logger.WithFields(logrus.Fields{"repo": repo, "version": info.Version}).Info("resolved latest version")
@@ -378,7 +378,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 			remote = "https://github.com/operator-framework/" + repo + ".git"
 		}
 
-		ref, ok := repoRefs["operator-framework/" + repo]
+		ref, ok := repoRefs["operator-framework/"+repo]
 		if !ok {
 			return nil, fmt.Errorf("ref not found for %q", repo)
 		}

@@ -39,7 +39,8 @@ type Options struct {
 	operatorControllerDir string
 	catalogDDir           string
 
-	pauseOnCherryPickError bool
+	pauseOnCherryPickError  bool
+	printPullRequestComment bool
 
 	flags.Options
 }
@@ -48,6 +49,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
 	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
 	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")
+	fs.BoolVar(&o.printPullRequestComment, "print-pull-request-comment", o.printPullRequestComment, "During synchonize mode, print out the pull request comment (for pasting into a PR).")
 
 	o.Options.Bind(fs)
 }
@@ -152,6 +154,16 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 	case flags.Synchronize:
 		cherryPickAll()
+		if opts.printPullRequestComment {
+			for repo, config := range commits {
+				s := fmt.Sprintf("For repo openshift/operator-framework-%s", repo)
+				fmt.Println(strings.Repeat("=", len(s)))
+				fmt.Println(s)
+				fmt.Println(strings.Repeat("=", len(s)))
+				s = internal.GetBodyV1(config.Target, config.Additional, strings.Split(opts.Assign, ","))
+				fmt.Println(s)
+			}
+		}
 	case flags.Publish:
 		client, err := opts.GitHubClient(opts.DryRun)
 		if err != nil {

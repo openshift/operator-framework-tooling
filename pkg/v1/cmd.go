@@ -36,7 +36,6 @@ func DefaultOptions() Options {
 }
 
 type Options struct {
-	rukpakDir             string
 	operatorControllerDir string
 	catalogDDir           string
 
@@ -46,7 +45,9 @@ type Options struct {
 }
 
 func (o *Options) Bind(fs *flag.FlagSet) {
-	fs.StringVar(&o.rukpakDir, "rukpak-dir", o.rukpakDir, "Directory for rukpak repository.")
+	// rukpak is no longer supported, but keeping the option to maintain backwards compatibility
+	var unusedDir string
+	fs.StringVar(&unusedDir, "rukpak-dir", unusedDir, "Directory for rukpak repository (deprecated).")
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
 	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
 	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")
@@ -60,7 +61,6 @@ func (o *Options) Validate() error {
 	}
 
 	for name, val := range map[string]string{
-		"rukpak":              o.rukpakDir,
 		"operator-controller": o.operatorControllerDir,
 		"catalogd":            o.catalogDDir,
 	} {
@@ -80,7 +80,6 @@ type Config struct {
 func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	directories := map[string]string{
 		"operator-controller": opts.operatorControllerDir,
-		"rukpak":              opts.rukpakDir,
 		"catalogd":            opts.catalogDDir,
 	}
 	commits := map[string]Config{}
@@ -125,7 +124,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		// downstream repositories have the desired git state already published. Therefore, only if we
 		// found that the repos are up-to-date (they are not in the commits map) can we do the replacing.
 		otherCommits := map[string]string{}
-		for _, repo := range []string{"rukpak", "catalogd"} {
+		for _, repo := range []string{"catalogd"} {
 			if _, ok := commits[repo]; !ok {
 				commit, err := determineDownstreamHead(ctx, logger.WithField("repo", repo), directories[repo], repo, flags.FetchMode(opts.FetchMode))
 				if err != nil {
@@ -266,7 +265,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		}
 	}
 
-	for _, name := range []string{"rukpak", "catalogd"} {
+	for _, name := range []string{"catalogd"} {
 		module := fmt.Sprintf("github.com/operator-framework/%s", name)
 		rawInfo, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 			"go", "list", "-json", "-m", module,

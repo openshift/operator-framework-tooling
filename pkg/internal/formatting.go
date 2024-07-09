@@ -59,10 +59,10 @@ func ParseFormat(format string) (Commit, error) {
 	}, nil
 }
 
-func Table(logger *logrus.Logger, commits []Commit) {
+func Table(logger *logrus.Logger, commits []Commit, repoBase string) {
 	writer := tabwriter.NewWriter(bumper.HideSecretsWriter{Delegate: os.Stdout, Censor: secret.Censor}, 0, 4, 2, ' ', 0)
 	for _, commit := range commits {
-		if _, err := fmt.Fprintln(writer, commit.Date.Format(time.DateTime)+"\t"+"operator-framework/"+commit.Repo+"\t", commit.Hash+"\t"+commit.Author+"\t"+commit.Message); err != nil {
+		if _, err := fmt.Fprintln(writer, commit.Date.Format(time.DateTime)+"\t"+repoBase+commit.Repo+"\t", commit.Hash+"\t"+commit.Author+"\t"+commit.Message); err != nil {
 			logger.WithError(err).Error("failed to write output")
 		}
 	}
@@ -82,6 +82,61 @@ func GetBody(commits []Commit, assign []string) string {
 		lines = append(
 			lines,
 			fmt.Sprintf("|%s|[operator-framework/%s@%s](https://github.com/operator-framework/%s/commit/%s)|%s|%s|",
+				commit.Date.Format(time.DateTime),
+				commit.Repo,
+				commit.Hash[0:7],
+				commit.Repo,
+				commit.Hash,
+				commit.Author,
+				commit.Message,
+			),
+		)
+	}
+	lines = append(lines, "", "This pull request is expected to merge without any human intervention. If tests are failing here, changes must land upstream to fix any issues so that future downstreaming efforts succeed.", "")
+	for _, who := range assign {
+		lines = append(lines, fmt.Sprintf("/cc @%s", who))
+	}
+
+	body := strings.Join(lines, "\n")
+
+	if len(body) >= 65536 {
+		body = body[:65530] + "..."
+	}
+
+	return body
+}
+
+func GetBodyV1(target Commit, commits []Commit, assign []string) string {
+	lines := []string{
+		"The downstream repository has been updated through the following upstream commit:",
+		"",
+		"| Date | Commit | Author | Message |",
+		"| -    | -      | -      | -       |",
+	}
+	lines = append(lines, fmt.Sprintf("|%s|[operator-framework/%s@%s](https://github.com/operator-framework/%s/commit/%s)|%s|%s|",
+		target.Date.Format(time.DateTime),
+		target.Repo,
+		target.Hash[0:7],
+		target.Repo,
+		target.Hash,
+		target.Author,
+		target.Message,
+	))
+	lines = append(lines, fmt.Sprintf("||[upstream commit list](https://github.com/operator-framework/%s/commits/%s)|||",
+		target.Repo,
+		target.Hash,
+	))
+	lines = append(lines,
+		"",
+		"The `vendor/` directory has been updated and the following commits were carried:",
+		"",
+		"| Date | Commit | Author | Message |",
+		"| -    | -      | -      | -       |",
+	)
+	for _, commit := range commits {
+		lines = append(
+			lines,
+			fmt.Sprintf("|%s|[openshift/operator-framework-%s@%s](https://github.com/openshift/operator-framework-%s/commit/%s)|%s|%s|",
 				commit.Date.Format(time.DateTime),
 				commit.Repo,
 				commit.Hash[0:7],

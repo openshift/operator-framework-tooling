@@ -160,7 +160,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 
 	switch flags.Mode(opts.Mode) {
 	case flags.Summarize:
-		internal.Table(logger, missingCommits)
+		internal.Table(logger, missingCommits, "operator-framework/")
 	case flags.Synchronize:
 		cherryPickAll()
 	case flags.Publish:

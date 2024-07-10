@@ -144,9 +144,9 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	case flags.Summarize:
 		for repo, info := range commits {
 			fmt.Printf("openshift/operator-framework-%s: updating to:\n", repo)
-			internal.Table(logger, []internal.Commit{info.Target})
+			internal.Table(logger, []internal.Commit{info.Target}, "operator-framework/")
 			fmt.Println(" + additional commits to cherry-pick on top:")
-			internal.Table(logger, info.Additional)
+			internal.Table(logger, info.Additional, "openshift/operator-framework-")
 			fmt.Println()
 		}
 	case flags.Synchronize:
@@ -195,7 +195,8 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)
 			}
 			if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, fork, title,
-				internal.GetBody(config.Additional, strings.Split(opts.Assign, ",")), opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
+				internal.GetBodyV1(config.Target, config.Additional, strings.Split(opts.Assign, ",")),
+				opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
 				return fmt.Errorf("PR creation failed.: %w", err)
 			}
 		}
@@ -255,6 +256,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		return nil, err
 	}
 	if config != nil {
+		config.Target.Repo = "operator-controller"
 		target["operator-controller"] = *config
 	}
 
@@ -308,6 +310,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		commitSha = strings.TrimSpace(commitSha)
 		logger.WithFields(logrus.Fields{"repo": name, "commit": commitSha}).Info("resolved latest commit")
 		commit, err := internal.Info(ctx, logger, commitSha, directories[name])
+		commit.Repo = name
 		if err != nil {
 			return nil, fmt.Errorf("failed to determine commit info: %w", err)
 		}
@@ -403,6 +406,7 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 			if err != nil {
 				return nil, err
 			}
+			info.Repo = repo
 			logger = logger.WithFields(logrus.Fields{
 				"commit":  info.Hash,
 				"message": info.Message,

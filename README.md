@@ -20,20 +20,19 @@ In the monorepo there are individual Dockerfiles controlling downstream builds f
 
 ## OLMv1
 
-The OLMv1 code is downstreamed into the three separate repositories:
+The OLMv1 code is downstreamed into two separate repositories:
 
 * [operator-framework/catalogd](https://github.com/operator-framework/catalogd) -> [openshift/operator-framework-catalogd](https://github.com/openshift/operator-framework-catalogd)
 * [operator-framework/operator-controller](https://github.com/operator-framework/operator-controller) -> [openshift/operator-framework-operator-controller](https://github.com/openshift/operator-framework-operator-controller) - the main repo
-* [operator-framework/rukpak](https://github.com/operator-framework/rukpak) -> [openshift/operator-framework-rukpak](https://github.com/openshift/operator-framework-rukpak)
 
 The upstream commits are downstreamed as a direct mirror (i.e. commit SHAs remain the same) and then merged into the `main` branch.
 
-However `operator-controller` has dependencies on the `catalogd` and `rukpak` repos, and requires that its `go.mod` is updated to reflect the downstream (openshift) repositories.
-1. Use the upstream `go.mod` file in `operator-controller` to determine which commits of `catalogd` and `rukpak` are to be merged.
+However `operator-controller` has dependencies on the `catalogd` repo, and requires that its `go.mod` is updated to reflect the downstream (openshift) repositories.
+1. Use the upstream `go.mod` file in `operator-controller` to determine which commits of `catalogd` are to be merged.
 2. Synchronize all three upstream repo to their respective downstream repos.
-3. If there are no changes to `catalogd` or `rukpak` (i.e. they've been merged), update the downstream `go.mod` file in `operator-controller` to reference those downstream repos.
+3. If there are no changes to `catalogd` (i.e. they've been merged), update the downstream `go.mod` file in `operator-controller` to reference those downstream repos.
 
-Only if there are no outstanding merges for downstream `catalogd` or `rukpak`, is the `go.mod` file in downstream `operator-controller` updated.
+Only if there are no outstanding merges for downstream `catalogd`, is the `go.mod` file in downstream `operator-controller` updated.
 
 Merging to downstream consists of:
 1. Merging via merge commit upstream `main` branch, this overrides the existing `main` branch via `git merge --stategy=ours`. This keeps the upstream and downstream commits numbered with the same SHA.

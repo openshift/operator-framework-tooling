@@ -45,10 +45,6 @@ type Options struct {
 }
 
 func (o *Options) Bind(fs *flag.FlagSet) {
-	// TODO: Remove -rukpak-dir flag from openshift/release repo
-	// rukpak is no longer supported, but keeping the option to maintain backwards compatibility
-	var unusedDir string
-	fs.StringVar(&unusedDir, "rukpak-dir", unusedDir, "Directory for rukpak repository (deprecated).")
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
 	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
 	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")

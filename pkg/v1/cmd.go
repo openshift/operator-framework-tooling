@@ -112,7 +112,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 		for repo, config := range commits {
 			commitLogger := logger.WithField("repo", repo)
-			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", directories[repo], config, opts.GitCommitArgs(), opts.pauseOnCherryPickError); err != nil {
+			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", directories[repo], config, opts.GitCommitArgs(), opts.pauseOnCherryPickError, opts.Options.DelayManifestGeneration); err != nil {
 				logger.WithError(err).Fatal("failed to merge to upstream")
 			}
 		}
@@ -452,7 +452,7 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 	return downstreamCommits, nil
 }
 
-func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string, pauseOnCherryPickError bool) error {
+func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string, pauseOnCherryPickError, delayManifestGeneration bool) error {
 	// first, get us to the upstream target
 	for _, cmd := range [][]string{
 		{"git", "checkout", branch},
@@ -469,10 +469,12 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 
 	// then, cherry-pick the additional bits
 	for _, commit := range config.Additional {
-		for i, cmd := range []*exec.Cmd{
+		cherryPickCommands := []*exec.Cmd{
 			internal.WithDir(exec.CommandContext(ctx,
 				"git", "cherry-pick", commit.Hash,
 			), dir),
+		}
+		goModCommands := []*exec.Cmd{
 			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 				"go", "mod", "tidy",
 			), filepath.Join(dir, "openshift")), os.Environ()...),
@@ -482,25 +484,44 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 				"go", "mod", "verify",
 			), filepath.Join(dir, "openshift")), os.Environ()...),
+		}
+		generateManifestsCommands := []*exec.Cmd{
 			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 				"make", "-f", "openshift/Makefile", "manifests",
 			), dir), os.Environ()...),
+		}
+		cleanManifestsCommands := []*exec.Cmd{
+			internal.WithDir(exec.CommandContext(ctx,
+				"git", "rm", "-rf", "--ignore-unmatch", "openshift/manifests",
+			), dir),
+		}
+
+		commitCommands := []*exec.Cmd{
+			internal.WithDir(exec.CommandContext(ctx,
+				"git", "add", "--force", "openshift/.",
+			), dir),
 			// git commit with filenames does not require staging, but since these repos
 			// choose to put vendor in gitignore, we need git add --force to stage those
 			internal.WithDir(exec.CommandContext(ctx,
-				"git", "add", "--force",
-				"openshift/vendor", "openshift/go.mod", "openshift/go.sum", "openshift/manifests",
-			), dir),
-			internal.WithDir(exec.CommandContext(ctx,
-				"git", append([]string{"commit",
-					"openshift/vendor", "openshift/go.mod", "openshift/go.sum", "openshift/manifests",
+				"git", append([]string{"commit", "openshift/.",
 					"--amend",
 					"--no-edit",
 				}, commitArgs...)...,
 			), dir),
-		} {
+		}
+
+		commands := goModCommands
+		if delayManifestGeneration {
+			commands = append(commands, cleanManifestsCommands...)
+		} else {
+			commands = append(commands, generateManifestsCommands...)
+		}
+		commands = append(commands, commitCommands...)
+
+		// Cherry picking has special error handling
+		for _, cmd := range cherryPickCommands {
 			if msg, err := internal.RunCommand(logger, cmd); err != nil {
-				if i == 0 && pauseOnCherryPickError {
+				if pauseOnCherryPickError {
 					fmt.Printf("Error during cherry-pick:\n%s", msg)
 					fmt.Print("Please resolve the cherry-pick conflict. <ENTER> to continue, 'q' to terminate>")
 					text, ioErr := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -512,10 +533,16 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				}
 			}
 		}
+
+		// Run the rest of the commands
+		for _, cmd := range commands {
+			if _, err := internal.RunCommand(logger, cmd); err != nil {
+				return err
+			}
+		}
 	}
 
-	// finally, apply our generated patches on top
-	for _, cmd := range []*exec.Cmd{
+	generatedPatches := []*exec.Cmd{
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"go", "mod", "tidy",
 		), dir), os.Environ()...),
@@ -550,7 +577,31 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				"--message", "UPSTREAM: <drop>: remove upstream GitHub configuration"},
 				commitArgs...)...,
 		), dir),
-	} {
+	}
+
+	commitManifests := []*exec.Cmd{
+		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+			"make", "-f", "openshift/Makefile", "manifests",
+		), dir), os.Environ()...),
+		internal.WithDir(exec.CommandContext(ctx,
+			"git", "add", "--force", "openshift/manifests",
+		), dir),
+		// git commit with filenames does not require staging, but since these repos
+		// choose to put vendor in gitignore, we need git add --force to stage those
+		internal.WithDir(exec.CommandContext(ctx,
+			"git", append([]string{"commit", "openshift/manifests",
+				"--message", "UPSTREAM: <drop>: Generate manifests",
+			}, commitArgs...)...,
+		), dir),
+	}
+
+	commands := generatedPatches
+	if delayManifestGeneration {
+		commands = append(commands, commitManifests...)
+	}
+
+	// finally, apply our generated patches on top
+	for _, cmd := range commands {
 		if _, err := internal.RunCommand(logger, cmd); err != nil {
 			return err
 		}

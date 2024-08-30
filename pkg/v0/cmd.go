@@ -113,6 +113,11 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 	}
 
+	// Get the tools for the repository
+	if err := internal.RunBingo(ctx, logger.WithField("phase", "bingo")); err != nil {
+		logger.WithError(err).Fatal("failed to setup tools via bingo")
+	}
+
 	var missingCommits []internal.Commit
 	for _, commit := range commits {
 		commitLogger := logger.WithField("commit", commit.Hash)

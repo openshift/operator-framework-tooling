@@ -11,6 +11,11 @@ import (
 	"k8s.io/test-infra/prow/config/secret"
 )
 
+func RunBingo(ctx context.Context, logger *logrus.Entry) error {
+	_, err := RunCommand(logger, exec.CommandContext(ctx, "bingo", "get"))
+	return err
+}
+
 func SetCommitter(ctx context.Context, logger *logrus.Entry, name string, email string) error {
 	for field, value := range map[string]string{
 		"user.name":  name,

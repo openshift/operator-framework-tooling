@@ -27,9 +27,7 @@ const (
 	GithubOrg   = "openshift"
 	GithubLogin = "openshift-bot"
 
-	RuntimePRAssignee   = "openshift/openshift-team-operator-runtime"
-	EcosystemPRAssignee = "openshift/openshift-team-operator-ecosystem"
-	DefaultPRAssignee   = RuntimePRAssignee + "," + EcosystemPRAssignee
+	DefaultPRAssignee   = "openshift/openshift-team-operator-framework"
 
 	DefaultBaseBranch = "master"
 )

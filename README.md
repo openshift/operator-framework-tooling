@@ -70,6 +70,8 @@ Running the tool with the `-mode=synchronize` will perform the actual merge in t
 
 Running the tool with the `-mode=publish` will perform the merge in the local repository, and then attempt to publish the PR. However, if you don't have the correct credentials set, it will still print the contents of the PR description that can be used to manually create a PR.
 
+See the [examples](https://github.com/openshift/operator-framework-tooling/tree/main/examples) directory for a set of sample scripts.
+
 ### Cleanup
 
 After merging, the tools may leave cruft behind in the local repository that may interfere with subsequent runs of the tool and/or other git operations.
@@ -80,12 +82,12 @@ git reflog expire --expire-unreachable=now --all
 git gc --prune=now
 git worktree prune
 ```
-The periodic jobs are run in containers, and don't need any cleanup.
+The periodic jobs are run in containers, and don't need any cleanup. You may also want to consider running the tool in a clean set of repositories.
 
 ### Options/Flags
 
 Options and flags may be found in the code:
 
-* [Generic - applies to both](https://github.com/openshift/operator-framework-tooling/blob/main/pkg/flags/options.go#L76)
-* [OLMv0 specific](https://github.com/openshift/operator-framework-tooling/blob/main/pkg/v0/cmd.go#L48)
-* [OLMv1 specific](https://github.com/openshift/operator-framework-tooling/blob/main/pkg/v1/cmd.go#L43)
+* [Generic - applies to both](https://github.com/search?q=repo%3Aopenshift%2Foperator-framework-tooling+path%3Apkg%2Fflags%2F*.go+%2Ffs%5C..%2BVar%2F&type=code)
+* [OLMv0 specific](https://github.com/search?q=repo%3Aopenshift%2Foperator-framework-tooling+path%3Apkg%2Fv0%2F*.go+%2Ffs%5C..%2BVar%2F&type=code)
+* [OLMv1 specific](https://github.com/search?q=repo%3Aopenshift%2Foperator-framework-tooling+path%3Apkg%2Fv1%2F*.go+%2Ffs%5C..%2BVar%2F&type=code)

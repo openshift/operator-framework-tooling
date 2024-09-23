@@ -39,7 +39,12 @@ type Options struct {
 	operatorControllerDir string
 	catalogDDir           string
 
-	pauseOnCherryPickError bool
+	pauseOnCherryPickError  bool
+	printPullRequestComment bool
+	forceRemerge            bool
+
+	dropCommits     string
+	listDropCommits []string
 
 	flags.Options
 }
@@ -48,6 +53,9 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
 	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
 	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")
+	fs.BoolVar(&o.printPullRequestComment, "print-pull-request-comment", o.printPullRequestComment, "During synchonize mode, print out the pull request comment (for pasting into a PR).")
+	fs.BoolVar(&o.forceRemerge, "force-remerge", o.forceRemerge, "When synchonizing, force a merge of the upstream branch again.")
+	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 
 	o.Options.Bind(fs)
 }
@@ -65,6 +73,11 @@ func (o *Options) Validate() error {
 			return fmt.Errorf("--%s-dir is required", name)
 		}
 	}
+
+	if o.dropCommits != "" {
+		o.listDropCommits = strings.Split(o.dropCommits, ",")
+	}
+
 	return nil
 }
 
@@ -90,7 +103,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			return fmt.Errorf("could not unmarshal input commits: %w", err)
 		}
 	} else {
-		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), directories, flags.FetchMode(opts.FetchMode))
+		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), directories, opts)
 		if err != nil {
 			logger.WithError(err).Fatal("failed to detect commits")
 		}
@@ -152,6 +165,16 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 	case flags.Synchronize:
 		cherryPickAll()
+		if opts.printPullRequestComment {
+			for repo, config := range commits {
+				s := fmt.Sprintf("For repo openshift/operator-framework-%s", repo)
+				fmt.Println(strings.Repeat("=", len(s)))
+				fmt.Println(s)
+				fmt.Println(strings.Repeat("=", len(s)))
+				s = internal.GetBodyV1(config.Target, config.Additional, strings.Split(opts.Assign, ","))
+				fmt.Println(s)
+			}
+		}
 	case flags.Publish:
 		client, err := opts.GitHubClient(opts.DryRun)
 		if err != nil {
@@ -244,7 +267,8 @@ func downstreamRemote(repo string, mode flags.FetchMode) string {
 	}
 }
 
-func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map[string]string, mode flags.FetchMode) (map[string]Config, error) {
+func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map[string]string, opts Options) (map[string]Config, error) {
+	mode := flags.FetchMode(opts.FetchMode)
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 		"git", "fetch", "--tags", upstreamRemote("operator-controller", mode),
 	), directories["operator-controller"])); err != nil {
@@ -252,7 +276,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 	}
 
 	target := map[string]Config{}
-	config, err, upToDate := detectNewOperatorControllerCommits(ctx, logger, directories["operator-controller"], mode)
+	config, err, upToDate := detectNewOperatorControllerCommits(ctx, logger, directories["operator-controller"], opts)
 	if err != nil {
 		return nil, err
 	}
@@ -315,10 +339,10 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		if err != nil {
 			return nil, fmt.Errorf("failed to determine commit info: %w", err)
 		}
-		if isUpToDate(ctx, logger, name, directories[name], commit.Hash) {
+		if !opts.forceRemerge && isUpToDate(ctx, logger, name, directories[name], commit.Hash) {
 			continue
 		}
-		additional, err := detectCarryCommits(ctx, logger, name, directories[name], commit.Hash, mode)
+		additional, err := detectCarryCommits(ctx, logger, name, directories[name], commit.Hash, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -330,7 +354,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 	return target, nil
 }
 
-func detectNewOperatorControllerCommits(ctx context.Context, logger *logrus.Entry, dir string, mode flags.FetchMode) (*Config, error, bool) {
+func detectNewOperatorControllerCommits(ctx context.Context, logger *logrus.Entry, dir string, opts Options) (*Config, error, bool) {
 	commitSha, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 		"git", "rev-parse", "FETCH_HEAD",
 	), dir))
@@ -346,7 +370,7 @@ func detectNewOperatorControllerCommits(ctx context.Context, logger *logrus.Entr
 	if isUpToDate(ctx, logger, "operator-controller", dir, commit.Hash) {
 		return nil, nil, true
 	}
-	additional, err := detectCarryCommits(ctx, logger, "operator-controller", dir, commit.Hash, mode)
+	additional, err := detectCarryCommits(ctx, logger, "operator-controller", dir, commit.Hash, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve additional commits: %w", err), false
 	}
@@ -369,7 +393,8 @@ func isUpToDate(ctx context.Context, logger *logrus.Entry, repo, dir, commit str
 
 var upstreamCommitRegex = regexp.MustCompile(`^UPSTREAM: (revert: )?(([\w.-]+/[\w-.-]+)?: )?(\d+:|<carry>:|<drop>:)`)
 
-func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, commit string, mode flags.FetchMode) ([]internal.Commit, error) {
+func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, commit string, opts Options) ([]internal.Commit, error) {
+	mode := flags.FetchMode(opts.FetchMode)
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 		"git", "fetch", upstreamRemote(repo, mode), commit,
 	), dir)); err != nil {
@@ -415,6 +440,18 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 			messageMatches := upstreamCommitRegex.FindStringSubmatch(info.Message)
 			if len(messageMatches) == 0 || len(messageMatches[0]) == 0 {
 				return nil, fmt.Errorf("unexpected commit message: %s", info.Message)
+			}
+
+			drop := ""
+			for _, c := range opts.listDropCommits {
+				if strings.HasPrefix(info.Hash, c) {
+					drop = c
+					break
+				}
+			}
+			if drop != "" {
+				logger.WithField("option=drop-commits", drop).Info("dropping commit due to option")
+				continue
 			}
 
 			// TODO: handle reverts, what else?

@@ -25,6 +25,7 @@ const (
 	defaultBranch = "main"
 
 	TideMergeMethodMergeLabel = "tide/merge-method-merge"
+	KindSyncLabel             = "kind/sync"
 )
 
 func DefaultOptions() Options {
@@ -213,6 +214,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				// determine the commits which need to be carried. But the sync PR itself need to use merge.
 				// By adding this label we instruct tide to merge instead of using the default behaviour.
 				TideMergeMethodMergeLabel,
+				KindSyncLabel,
 			}
 			if opts.SelfApprove {
 				logger.Infof("Self-approving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)

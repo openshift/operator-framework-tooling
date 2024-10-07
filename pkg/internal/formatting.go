@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"strings"
@@ -158,5 +159,5 @@ func GetBodyV1(target Commit, commits []Commit, assign []string) string {
 		body = body[:65530] + "..."
 	}
 
-	return body
+	return html.EscapeString(body)
 }

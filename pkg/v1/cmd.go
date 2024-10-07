@@ -155,6 +155,14 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 	}
 
+	labelsToAdd := []string{
+		// The repos is set to use rebase merge method for making it easier to programmatically
+		// determine the commits which need to be carried. But the sync PR itself need to use merge.
+		// By adding this label we instruct tide to merge instead of using the default behaviour.
+		TideMergeMethodMergeLabel,
+		KindSyncLabel,
+	}
+
 	switch flags.Mode(opts.Mode) {
 	case flags.Summarize:
 		for repo, info := range commits {
@@ -174,6 +182,9 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				fmt.Println(strings.Repeat("=", len(s)))
 				s = internal.GetBodyV1(config.Target, config.Additional, strings.Split(opts.Assign, ","))
 				fmt.Println(s)
+				for _, label := range labelsToAdd {
+					fmt.Printf("/label %s\n", label)
+				}
 			}
 		}
 	case flags.Publish:
@@ -209,13 +220,6 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				return fmt.Errorf("Failed to push changes.: %w", err)
 			}
 
-			labelsToAdd := []string{
-				// The repos is set to use rebase merge method for making it easier to programmatically
-				// determine the commits which need to be carried. But the sync PR itself need to use merge.
-				// By adding this label we instruct tide to merge instead of using the default behaviour.
-				TideMergeMethodMergeLabel,
-				KindSyncLabel,
-			}
 			if opts.SelfApprove {
 				logger.Infof("Self-approving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
 				labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)

@@ -3,14 +3,18 @@
 # This script will run a local OLMv0 downstream operation, to allow someone to
 # debug a failure.
 #
-# Assumptions:
-# * The tooling directory is located in ${HOME}/git/openshift/operator-framework-tooling
-# * The v0 executable has been built in there via `make`
-#
 # Call with your github user name, if it's not the same as your current user name.
 #
+# Usage examples:
+#     downstream-v1.sh octocat "-drop-commits fca12345678" /Users/octocat/downstreamv0
+#     downstream-v1.sh octocat "" /Users/octocat/downstreamv0
+#     downstream-v1.sh octocat
 
 GITHUB_USER=${1:-${USER}}
+SYNC_ARGS=${2:-""}
+SYNC_DIR=${3:-$PWD}
+
+TOOLS_REPO_DIR=$(dirname "$(dirname "$0")")
 
 # Cleanup from last time
 reset-repo () {
@@ -26,6 +30,7 @@ reset-repo () {
 }
 
 setup-repo() {
+    pushd $SYNC_DIR
     if [ -d $1 ]; then
         echo "Resetting $1"
         (cd $1 && reset-repo)
@@ -34,14 +39,21 @@ setup-repo() {
         git clone git@github.com:openshift/$1.git
         git -C $1 remote add ${GITHUB_USER} git@github.com:${GITHUB_USER}/$1.git
     fi
+    popd
 }
 
 setup-repo operator-framework-olm
 
 set -x
 
-cd operator-framework-olm
-${HOME}/git/openshift/operator-framework-tooling/v0 \
+pushd $TOOLS_REPO_DIR
+make
+popd
+
+pushd $SYNC_DIR/operator-framework-olm
+$TOOLS_REPO_DIR/v0 \
        --mode=synchronize \
        --delay-manifest-generation \
-       --log-level=debug
+       --log-level=debug \
+       $SYNC_ARGS
+popd

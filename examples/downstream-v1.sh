@@ -3,14 +3,18 @@
 # This script will run a local OLMv1 downstream operation, to allow someone to
 # debug a failure.
 #
-# Assumptions:
-# * The tooling directory is located in ${HOME}/git/openshift/operator-framework-tooling
-# * The v1 executable has been built in there via `make`
-#
 # Call with your github user name, if it's not the same as your current user name.
 #
+# Usage examples:
+#     downstream-v1.sh octocat "-drop-commits fca12345678" /Users/octocat/downstream1
+#     downstream-v1.sh octocat "" /Users/octocat/downstream1
+#     downstream-v1.sh octocat
 
 GITHUB_USER=${1:-${USER}}
+SYNC_ARGS=${2:-""}
+SYNC_DIR=${3:-$PWD}
+
+TOOLS_REPO_DIR=$(dirname "$(dirname "$0")")
 
 # Cleanup from last time
 reset-repo () {
@@ -27,6 +31,7 @@ reset-repo () {
 }
 
 setup-repo() {
+    pushd $SYNC_DIR
     if [ -d $1 ]; then
         echo "Resetting $1"
         (cd $1 && reset-repo)
@@ -35,17 +40,23 @@ setup-repo() {
         git clone git@github.com:openshift/$1.git
         git -C $1 remote add ${GITHUB_USER} git@github.com:${GITHUB_USER}/$1.git
     fi
+    popd
 }
 
 setup-repo operator-framework-catalogd
 setup-repo operator-framework-operator-controller
 
-${HOME}/git/openshift/operator-framework-tooling/v1 \
+pushd $TOOLS_REPO_DIR
+make
+popd
+
+$TOOLS_REPO_DIR/v1  \
        --mode=synchronize \
-       --catalogd-dir=${PWD}/operator-framework-catalogd \
-       --operator-controller-dir=${PWD}/operator-framework-operator-controller \
+       --catalogd-dir=${SYNC_DIR}/operator-framework-catalogd \
+       --operator-controller-dir=${SYNC_DIR}/operator-framework-operator-controller \
        --pause-on-cherry-pick-error \
-       --log-level=debug
+       --log-level=debug \
+       $SYNC_ARGS
 
 # Additional option: https://github.com/openshift/operator-framework-tooling/pull/44
 #       --delay-manifest-generation \

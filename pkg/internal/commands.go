@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"k8s.io/test-infra/prow/cmd/generic-autobumper/bumper"
@@ -12,7 +13,15 @@ import (
 )
 
 func RunBingo(ctx context.Context, logger *logrus.Entry) error {
-	_, err := RunCommand(logger, exec.CommandContext(ctx, "bingo", "get"))
+	var err error
+	backoff := []time.Duration{ 0, 10, 30, 60, 120, 240 }
+	for _, b := range backoff {
+		time.Sleep(b * time.Second)
+		_, err = RunCommand(logger, exec.CommandContext(ctx, "bingo", "get"))
+		if err == nil {
+			return nil
+		}
+	}
 	return err
 }
 

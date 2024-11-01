@@ -3,11 +3,6 @@
 These scripts will run the downstreaming tooling to allow you to debug a failing
 downstreaming job.
 
-## Assumptions
-
-This assumes you have this repo located at: `${HOME}/git/openshift/operator-framework-tooling`.
-If you don't, then update the script.
-
 ## How to Run
 
 You should probably run this in an new temporary directory, or a directory dedicated to downstreaming.
@@ -19,7 +14,7 @@ OLMv1:
 ```
 $ mkdir ${HOME}/downstream1
 $ cd ${HOME}/downstream1
-$ ${HOME}/git/openshift/operator-framework/tooling/examples/downstream-v1.sh ${GITHUB_USER}
+$ ${HOME}/path/to/operator-framework-tooling/examples/downstream-v1.sh -u ${GITHUB_USER}
 ```
 
 OLMv0 would be similar.

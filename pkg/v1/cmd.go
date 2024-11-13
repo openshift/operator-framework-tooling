@@ -590,6 +590,10 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 	}
 
+	extraVendor := map[string][]string{
+		"operator-controller": {"testdata/push", "testdata/registry"},
+	}
+
 	generatedPatches := []*exec.Cmd{
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"go", "mod", "tidy",
@@ -600,39 +604,38 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"go", "mod", "verify",
 		), dir), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "tidy",
-		), filepath.Join(dir, "testdata/push")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "vendor",
-		), filepath.Join(dir, "testdata/push")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "verify",
-		), filepath.Join(dir, "testdata/push")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "tidy",
-		), filepath.Join(dir, "testdata/registry")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "vendor",
-		), filepath.Join(dir, "testdata/registry")), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "verify",
-		), filepath.Join(dir, "testdata/registry")), os.Environ()...),
+	}
+
+	addFiles := []string{"vendor", "go.mod", "go.sum"}
+	if vendorDirs, ok := extraVendor[repo]; ok {
+		for _, vd := range vendorDirs {
+			generatedPatches = append(generatedPatches, []*exec.Cmd{
+				internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+					"go", "mod", "tidy",
+				), filepath.Join(dir, vd)), os.Environ()...),
+				internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+					"go", "mod", "vendor",
+				), filepath.Join(dir, vd)), os.Environ()...),
+				internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+					"go", "mod", "verify",
+				), filepath.Join(dir, vd)), os.Environ()...)}...)
+			addFiles = append(addFiles, []string{
+				filepath.Join(vd, "vendor"),
+				filepath.Join(vd, "go.mod"),
+				filepath.Join(vd, "go.sum"),
+			}...)
+		}
+	}
+
+	generatedPatches = append(generatedPatches, []*exec.Cmd{
 		// git commit with filenames does not require staging, but since these repos
 		// choose to put vendor in gitignore, we need git add --force to stage those
 		internal.WithDir(exec.CommandContext(ctx,
-			"git", "add", "--force",
-			"vendor", "go.mod", "go.sum",
-			"testdata/push/vendor", "testdata/push/go.mod", "testdata/push/go.sum",
-			"testdata/registry/vendor", "testdata/registry/go.mod", "testdata/registry/go.sum",
+			"git", append([]string{"add", "--force"}, addFiles...)...,
 		), dir),
 		internal.WithDir(exec.CommandContext(ctx,
-			"git", append([]string{"commit",
-				"vendor", "go.mod", "go.sum",
-				"testdata/push/vendor", "testdata/push/go.mod", "testdata/push/go.sum",
-				"testdata/registry/vendor", "testdata/registry/go.mod", "testdata/registry/go.sum",
-				"--message", "UPSTREAM: <drop>: go mod vendor"},
-				commitArgs...)...,
+			"git", append(append([]string{"commit", "--message", "UPSTREAM: <drop>: go mod vendor"},
+				addFiles...), commitArgs...)...,
 		), dir),
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 			"rm", "-rf", ".github",
@@ -647,7 +650,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				"--message", "UPSTREAM: <drop>: remove upstream GitHub configuration"},
 				commitArgs...)...,
 		), dir),
-	}
+	}...)
 
 	commitManifests := []*exec.Cmd{
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,

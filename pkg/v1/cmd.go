@@ -43,6 +43,7 @@ type Options struct {
 	pauseOnCherryPickError  bool
 	printPullRequestComment bool
 	forceRemerge            bool
+	ignoreCatalogd          bool
 
 	dropCommits     string
 	listDropCommits []string
@@ -50,12 +51,16 @@ type Options struct {
 	flags.Options
 }
 
+var dirMap = map[string]string{}
+var repoList = []string{}
+
 func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
 	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
 	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")
 	fs.BoolVar(&o.printPullRequestComment, "print-pull-request-comment", o.printPullRequestComment, "During synchonize mode, print out the pull request comment (for pasting into a PR).")
 	fs.BoolVar(&o.forceRemerge, "force-remerge", o.forceRemerge, "When synchonizing, force a merge of the upstream branch again.")
+	fs.BoolVar(&o.ignoreCatalogd, "ignore-catalogd", o.ignoreCatalogd, "Ignore catalogd repository.")
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 
 	o.Options.Bind(fs)
@@ -66,10 +71,13 @@ func (o *Options) Validate() error {
 		return err
 	}
 
-	for name, val := range map[string]string{
-		"operator-controller": o.operatorControllerDir,
-		"catalogd":            o.catalogDDir,
-	} {
+	dirMap["operator-controller"] = o.operatorControllerDir
+	if !o.ignoreCatalogd {
+		dirMap["catalogd"] = o.catalogDDir
+		repoList = append(repoList, "catalogd")
+	}
+
+	for name, val := range dirMap {
 		if val == "" {
 			return fmt.Errorf("--%s-dir is required", name)
 		}
@@ -89,10 +97,6 @@ type Config struct {
 }
 
 func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
-	directories := map[string]string{
-		"operator-controller": opts.operatorControllerDir,
-		"catalogd":            opts.catalogDDir,
-	}
 	commits := map[string]Config{}
 	var err error
 	if opts.CommitFileInput != "" {
@@ -104,7 +108,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			return fmt.Errorf("could not unmarshal input commits: %w", err)
 		}
 	} else {
-		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), directories, opts)
+		commits, err = detectNewCommits(ctx, logger.WithField("phase", "detect"), dirMap, opts)
 		if err != nil {
 			logger.WithError(err).Fatal("failed to detect commits")
 		}
@@ -131,7 +135,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 		for repo, config := range commits {
 			commitLogger := logger.WithField("repo", repo)
-			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", directories[repo], config, opts.GitCommitArgs(), opts.pauseOnCherryPickError, opts.Options.DelayManifestGeneration); err != nil {
+			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", dirMap[repo], config, opts.GitCommitArgs(), opts.pauseOnCherryPickError, opts.Options.DelayManifestGeneration); err != nil {
 				logger.WithError(err).Fatal("failed to merge to upstream")
 			}
 		}
@@ -140,9 +144,9 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		// downstream repositories have the desired git state already published. Therefore, only if we
 		// found that the repos are up-to-date (they are not in the commits map) can we do the replacing.
 		otherCommits := map[string]string{}
-		for _, repo := range []string{"catalogd"} {
+		for _, repo := range repoList {
 			if _, ok := commits[repo]; !ok {
-				commit, err := determineDownstreamHead(ctx, logger.WithField("repo", repo), directories[repo], repo, flags.FetchMode(opts.FetchMode))
+				commit, err := determineDownstreamHead(ctx, logger.WithField("repo", repo), dirMap[repo], repo, opts)
 				if err != nil {
 					logger.WithError(err).Fatal("failed to determine other repo HEAD")
 				}
@@ -150,7 +154,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			}
 		}
 		delete(otherCommits, "operator-controller")
-		if err := rewriteGoMod(ctx, logger.WithField("repo", "operator-controller"), directories["operator-controller"], otherCommits, opts.GitCommitArgs()); err != nil {
+		if err := rewriteGoMod(ctx, logger.WithField("repo", "operator-controller"), dirMap["operator-controller"], otherCommits, opts.GitCommitArgs()); err != nil {
 			logger.WithError(err).Fatal("failed to rewrite go mod")
 		}
 	}
@@ -216,7 +220,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 					"https://%s:%s@github.com/%s/%s.git",
 					opts.GithubLogin, string(secret.GetTokenGenerator(opts.GitHubOptions.TokenPath)()), opts.GithubLogin, fork,
 				),
-				remoteBranch, stdout, stderr, opts.DryRun, bumper.WithContext(ctx), bumper.WithDir(directories[repo])); err != nil {
+				remoteBranch, stdout, stderr, opts.DryRun, bumper.WithContext(ctx), bumper.WithDir(dirMap[repo])); err != nil {
 				return fmt.Errorf("Failed to push changes.: %w", err)
 			}
 
@@ -234,9 +238,9 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	return nil
 }
 
-func determineDownstreamHead(ctx context.Context, logger *logrus.Entry, dir, repo string, mode flags.FetchMode) (string, error) {
+func determineDownstreamHead(ctx context.Context, logger *logrus.Entry, dir, repo string, opts Options) (string, error) {
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-		"git", "fetch", "--tags", downstreamRemote(repo, mode),
+		"git", "fetch", "--tags", downstreamRemote(repo, opts),
 	), dir)); err != nil {
 		return "", fmt.Errorf("failed to fetch upstream: %w", err)
 	}
@@ -251,32 +255,45 @@ func determineDownstreamHead(ctx context.Context, logger *logrus.Entry, dir, rep
 
 var syntheticVersionRegex = regexp.MustCompile(`[^-]+-(?:[0-9]+\.)[0-9]{14}-([0-9a-f]+)`)
 
-func upstreamRemote(repo string, mode flags.FetchMode) string {
+func upstreamRemote(repo string, opts Options) string {
+	mode := flags.FetchMode(opts.FetchMode)
 	switch mode {
 	case flags.SSH:
 		return "git@github.com:operator-framework/" + repo + ".git"
 	case flags.HTTPS:
 		return "https://github.com/operator-framework/" + repo + ".git"
+	case flags.FILE:
+		path, err := filepath.Abs(opts.FetchDir)
+		if err != nil {
+			panic(fmt.Errorf("Unable to canonicalize %q: %w", opts.FetchDir, err))
+		}
+		return "file://" + path + "/" + repo
 	default:
 		panic(fmt.Errorf("unexpected fetch mode %s", mode))
 	}
 }
 
-func downstreamRemote(repo string, mode flags.FetchMode) string {
+func downstreamRemote(repo string, opts Options) string {
+	mode := flags.FetchMode(opts.FetchMode)
 	switch mode {
 	case flags.SSH:
 		return "git@github.com:openshift/operator-framework-" + repo + ".git"
 	case flags.HTTPS:
 		return "https://github.com/openshift/operator-framework-" + repo + ".git"
+	case flags.FILE:
+		path, err := filepath.Abs(opts.FetchDir)
+		if err != nil {
+			panic(fmt.Errorf("Unable to canonicalize %q: %w", opts.FetchDir, err))
+		}
+		return "file://" + path + "/" + repo
 	default:
 		panic(fmt.Errorf("unexpected fetch mode %s", mode))
 	}
 }
 
 func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map[string]string, opts Options) (map[string]Config, error) {
-	mode := flags.FetchMode(opts.FetchMode)
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-		"git", "fetch", "--tags", upstreamRemote("operator-controller", mode),
+		"git", "fetch", "--tags", upstreamRemote("operator-controller", opts),
 	), directories["operator-controller"])); err != nil {
 		return nil, fmt.Errorf("failed to fetch upstream: %w", err)
 	}
@@ -299,7 +316,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		}
 	}
 
-	for _, name := range []string{"catalogd"} {
+	for _, name := range repoList {
 		module := fmt.Sprintf("github.com/operator-framework/%s", name)
 		rawInfo, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 			"go", "list", "-json", "-m", module,
@@ -316,7 +333,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		logger.WithFields(logrus.Fields{"repo": name, "version": info.Version}).Info("resolved latest version")
 
 		if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-			"git", "fetch", "--tags", upstreamRemote(name, mode),
+			"git", "fetch", "--tags", upstreamRemote(name, opts),
 		), directories[name])); err != nil {
 			return nil, fmt.Errorf("failed to fetch upstream version: %w", err)
 		}
@@ -400,9 +417,8 @@ func isUpToDate(ctx context.Context, logger *logrus.Entry, repo, dir, commit str
 var upstreamCommitRegex = regexp.MustCompile(`^UPSTREAM: (revert: )?(([\w.-]+/[\w-.-]+)?: )?(\d+:|<carry>:|<drop>:)`)
 
 func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, commit string, opts Options) ([]internal.Commit, error) {
-	mode := flags.FetchMode(opts.FetchMode)
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-		"git", "fetch", upstreamRemote(repo, mode), commit,
+		"git", "fetch", upstreamRemote(repo, opts), commit,
 	), dir)); err != nil {
 		return nil, err
 	}

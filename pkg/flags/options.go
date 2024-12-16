@@ -21,13 +21,14 @@ type FetchMode string
 const (
 	HTTPS FetchMode = "https"
 	SSH   FetchMode = "ssh"
+	FILE  FetchMode = "file"
 )
 
 const (
 	GithubOrg   = "openshift"
 	GithubLogin = "openshift-bot"
 
-	DefaultPRAssignee   = "openshift/openshift-team-operator-framework"
+	DefaultPRAssignee = "openshift/openshift-team-operator-framework"
 
 	DefaultBaseBranch = "master"
 )
@@ -38,6 +39,7 @@ type Options struct {
 	Mode             string
 	LogLevel         string
 	FetchMode        string
+	FetchDir         string
 
 	DryRun       bool
 	GithubLogin  string
@@ -60,6 +62,7 @@ func DefaultOptions() Options {
 		Mode:                    string(Summarize),
 		LogLevel:                logrus.InfoLevel.String(),
 		FetchMode:               string(SSH),
+		FetchDir:                "",
 		DryRun:                  true,
 		GithubLogin:             GithubLogin,
 		GithubOrg:               GithubOrg,
@@ -77,6 +80,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.CommitFileInput, "commits-input", o.CommitFileOutput, "File to read commits data from in order to drive sync process.")
 	fs.StringVar(&o.LogLevel, "log-level", o.LogLevel, "Logging level.")
 	fs.StringVar(&o.FetchMode, "fetch-mode", o.FetchMode, "Method to use for fetching from git remotes.")
+	fs.StringVar(&o.FetchDir, "fetch-dir", o.FetchDir, "Base directory for 'file' fetch mode.")
 
 	fs.BoolVar(&o.DryRun, "dry-run", o.DryRun, "Whether to actually create the pull request with github client")
 	fs.StringVar(&o.GithubLogin, "github-login", o.GithubLogin, "The GitHub username to use.")
@@ -101,9 +105,9 @@ func (o *Options) Validate() error {
 	}
 
 	switch FetchMode(o.FetchMode) {
-	case SSH, HTTPS:
+	case SSH, HTTPS, FILE:
 	default:
-		return fmt.Errorf("--fetch-mode must be one of %v", []FetchMode{HTTPS, SSH})
+		return fmt.Errorf("--fetch-mode must be one of %v", []FetchMode{HTTPS, SSH, FILE})
 	}
 
 	if _, err := logrus.ParseLevel(o.LogLevel); err != nil {

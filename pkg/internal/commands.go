@@ -1,10 +1,13 @@
 package internal
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -14,7 +17,7 @@ import (
 
 func RunBingo(ctx context.Context, logger *logrus.Entry) error {
 	var err error
-	backoff := []time.Duration{ 0, 10, 30, 60, 120, 240 }
+	backoff := []time.Duration{0, 10, 30, 60, 120, 240}
 	for _, b := range backoff {
 		time.Sleep(b * time.Second)
 		_, err = RunCommand(logger, exec.CommandContext(ctx, "bingo", "get"))
@@ -71,4 +74,19 @@ func WithEnv(command *exec.Cmd, env ...string) *exec.Cmd {
 func WithDir(command *exec.Cmd, dir string) *exec.Cmd {
 	command.Dir = dir
 	return command
+}
+
+func RunCommandPauseOnError(logger *logrus.Entry, cmd *exec.Cmd, pause bool) (string, error) {
+	msg, err := RunCommand(logger, cmd)
+	if err != nil && pause {
+		fmt.Printf("Error running command: %v\n", cmd)
+		fmt.Printf("Error message:\n%s", msg)
+		fmt.Print("Please resolve the error and rerun the command as necessary. <ENTER> to continue, 'q' to terminate>")
+		text, ioErr := bufio.NewReader(os.Stdin).ReadString('\n')
+		if ioErr != nil || strings.TrimSpace(text) == "q" {
+			return msg, err
+		}
+		return msg, nil
+	}
+	return msg, err
 }

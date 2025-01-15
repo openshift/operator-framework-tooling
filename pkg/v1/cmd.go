@@ -41,6 +41,7 @@ type Options struct {
 	catalogDDir           string
 
 	pauseOnCherryPickError  bool
+	pauseOnCommandError     bool
 	printPullRequestComment bool
 	forceRemerge            bool
 	ignoreCatalogd          bool
@@ -61,6 +62,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.BoolVar(&o.printPullRequestComment, "print-pull-request-comment", o.printPullRequestComment, "During synchonize mode, print out the pull request comment (for pasting into a PR).")
 	fs.BoolVar(&o.forceRemerge, "force-remerge", o.forceRemerge, "When synchonizing, force a merge of the upstream branch again.")
 	fs.BoolVar(&o.ignoreCatalogd, "ignore-catalogd", o.ignoreCatalogd, "Ignore catalogd repository.")
+	fs.BoolVar(&o.pauseOnCommandError, "pause-on-command-error", o.pauseOnCommandError, "Pause after manifest generation error.")
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 
 	o.Options.Bind(fs)
@@ -135,7 +137,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 		for repo, config := range commits {
 			commitLogger := logger.WithField("repo", repo)
-			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", dirMap[repo], config, opts.GitCommitArgs(), opts.pauseOnCherryPickError, opts.Options.DelayManifestGeneration); err != nil {
+			if err := applyConfig(ctx, commitLogger, "operator-framework", repo, "main", dirMap[repo], config, opts.GitCommitArgs(), opts); err != nil {
 				logger.WithError(err).Fatal("failed to merge to upstream")
 			}
 		}
@@ -516,7 +518,7 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 	return downstreamCommits, nil
 }
 
-func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string, pauseOnCherryPickError, delayManifestGeneration bool) error {
+func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, config Config, commitArgs []string, opts Options) error {
 	// first, get us to the upstream target
 	for _, cmd := range [][]string{
 		{"git", "checkout", branch},
@@ -575,7 +577,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 
 		commands := goModCommands
-		if delayManifestGeneration {
+		if opts.DelayManifestGeneration {
 			commands = append(commands, cleanManifestsCommands...)
 		} else {
 			commands = append(commands, generateManifestsCommands...)
@@ -585,7 +587,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		// Cherry picking has special error handling
 		for _, cmd := range cherryPickCommands {
 			if msg, err := internal.RunCommand(logger, cmd); err != nil {
-				if pauseOnCherryPickError {
+				if opts.pauseOnCherryPickError {
 					fmt.Printf("Error during cherry-pick:\n%s", msg)
 					fmt.Print("Please resolve the cherry-pick conflict. <ENTER> to continue, 'q' to terminate>")
 					text, ioErr := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -600,7 +602,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 
 		// Run the rest of the commands
 		for _, cmd := range commands {
-			if _, err := internal.RunCommand(logger, cmd); err != nil {
+			if _, err := internal.RunCommandPauseOnError(logger, cmd, opts.pauseOnCommandError); err != nil {
 				return err
 			}
 		}
@@ -685,13 +687,13 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 	}
 
 	commands := generatedPatches
-	if delayManifestGeneration {
+	if opts.DelayManifestGeneration {
 		commands = append(commands, commitManifests...)
 	}
 
 	// finally, apply our generated patches on top
 	for _, cmd := range commands {
-		if _, err := internal.RunCommand(logger, cmd); err != nil {
+		if _, err := internal.RunCommandPauseOnError(logger, cmd, opts.pauseOnCommandError); err != nil {
 			return err
 		}
 	}

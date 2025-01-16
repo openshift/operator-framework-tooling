@@ -38,13 +38,11 @@ func DefaultOptions() Options {
 
 type Options struct {
 	operatorControllerDir string
-	catalogDDir           string
 
 	pauseOnCherryPickError  bool
 	pauseOnCommandError     bool
 	printPullRequestComment bool
 	forceRemerge            bool
-	ignoreCatalogd          bool
 
 	dropCommits     string
 	listDropCommits []string
@@ -56,12 +54,13 @@ var dirMap = map[string]string{}
 var repoList = []string{}
 
 func (o *Options) Bind(fs *flag.FlagSet) {
+	// keep this around until we update openshift/release to remove the option
+	var ignoreCatalogd bool
 	fs.StringVar(&o.operatorControllerDir, "operator-controller-dir", o.operatorControllerDir, "Directory for operator-controller repository.")
-	fs.StringVar(&o.catalogDDir, "catalogd-dir", o.catalogDDir, "Directory for catalogd repository.")
 	fs.BoolVar(&o.pauseOnCherryPickError, "pause-on-cherry-pick-error", o.pauseOnCherryPickError, "When an error occurs during cherry-pick, pause to allow the user to fix.")
 	fs.BoolVar(&o.printPullRequestComment, "print-pull-request-comment", o.printPullRequestComment, "During synchonize mode, print out the pull request comment (for pasting into a PR).")
 	fs.BoolVar(&o.forceRemerge, "force-remerge", o.forceRemerge, "When synchonizing, force a merge of the upstream branch again.")
-	fs.BoolVar(&o.ignoreCatalogd, "ignore-catalogd", o.ignoreCatalogd, "Ignore catalogd repository.")
+	fs.BoolVar(&ignoreCatalogd, "ignore-catalogd", ignoreCatalogd, "Ignore catalogd repository.")
 	fs.BoolVar(&o.pauseOnCommandError, "pause-on-command-error", o.pauseOnCommandError, "Pause after manifest generation error.")
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 
@@ -74,10 +73,6 @@ func (o *Options) Validate() error {
 	}
 
 	dirMap["operator-controller"] = o.operatorControllerDir
-	if !o.ignoreCatalogd {
-		dirMap["catalogd"] = o.catalogDDir
-		repoList = append(repoList, "catalogd")
-	}
 
 	for name, val := range dirMap {
 		if val == "" {

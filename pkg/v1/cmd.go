@@ -44,6 +44,8 @@ type Options struct {
 	printPullRequestComment bool
 	forceRemerge            bool
 
+	fetchHead string
+
 	dropCommits     string
 	listDropCommits []string
 
@@ -63,6 +65,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.BoolVar(&ignoreCatalogd, "ignore-catalogd", ignoreCatalogd, "Ignore catalogd repository.")
 	fs.BoolVar(&o.pauseOnCommandError, "pause-on-command-error", o.pauseOnCommandError, "Pause after manifest generation error.")
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
+	fs.StringVar(&o.fetchHead, "fetch-head", o.fetchHead, "Upstream commit/branch/tag to sync.")
 
 	o.Options.Bind(fs)
 }
@@ -290,7 +293,7 @@ func downstreamRemote(repo string, opts Options) string {
 
 func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map[string]string, opts Options) (map[string]Config, error) {
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
-		"git", "fetch", "--tags", upstreamRemote("operator-controller", opts),
+		"git", "fetch", "--tags", upstreamRemote("operator-controller", opts), opts.fetchHead,
 	), directories["operator-controller"])); err != nil {
 		return nil, fmt.Errorf("failed to fetch upstream: %w", err)
 	}

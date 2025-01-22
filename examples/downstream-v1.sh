@@ -67,7 +67,6 @@ setup-repo() {
     popd
 }
 
-setup-repo operator-framework-catalogd
 setup-repo operator-framework-operator-controller
 
 make -C $TOOLS_REPO_DIR
@@ -76,7 +75,6 @@ set -x
 
 ${TOOLS_REPO_DIR}/v1  \
        --mode=synchronize \
-       --catalogd-dir=${SYNC_DIR}/operator-framework-catalogd \
        --operator-controller-dir=${SYNC_DIR}/operator-framework-operator-controller \
        --pause-on-cherry-pick-error \
        --log-level=debug \

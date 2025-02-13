@@ -604,7 +604,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 	}
 
 	extraVendor := map[string][]string{
-		"operator-controller": {"testdata/push", "testdata/registry"},
+		"operator-controller": {"testdata/push", "testdata/registry", "hack/ci/custom-linters/analyzers/testdata"},
 	}
 
 	generatedPatches := []*exec.Cmd{

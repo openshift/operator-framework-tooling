@@ -603,41 +603,40 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 	}
 
-	extraVendor := map[string][]string{
-		"operator-controller": {"testdata/push", "testdata/registry", "hack/ci/custom-linters/analyzers/testdata"},
+	vendorDirs := []string{}
+	finder := internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+		"find", ".", "-name", "go.mod",
+	), dir), os.Environ()...)
+	output, err := internal.RunCommand(logger, finder)
+	if err != nil {
+		return err
 	}
-
-	generatedPatches := []*exec.Cmd{
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "tidy",
-		), dir), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "vendor",
-		), dir), os.Environ()...),
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"go", "mod", "verify",
-		), dir), os.Environ()...),
-	}
-
-	addFiles := []string{"vendor", "go.mod", "go.sum"}
-	if vendorDirs, ok := extraVendor[repo]; ok {
-		for _, vd := range vendorDirs {
-			generatedPatches = append(generatedPatches, []*exec.Cmd{
-				internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-					"go", "mod", "tidy",
-				), filepath.Join(dir, vd)), os.Environ()...),
-				internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-					"go", "mod", "vendor",
-				), filepath.Join(dir, vd)), os.Environ()...),
-				internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-					"go", "mod", "verify",
-				), filepath.Join(dir, vd)), os.Environ()...)}...)
-			addFiles = append(addFiles, []string{
-				filepath.Join(vd, "vendor"),
-				filepath.Join(vd, "go.mod"),
-				filepath.Join(vd, "go.sum"),
-			}...)
+	// Remove ".bingo" dirs
+	for _, d := range strings.Split(output, "\n") {
+		if !strings.Contains(d, ".bingo/go.mod") {
+			vendorDirs = append(vendorDirs, d)
 		}
+	}
+
+	generatedPatches := []*exec.Cmd{}
+	addFiles := []string{"vendor", "go.mod", "go.sum"}
+	for _, vd := range vendorDirs {
+		vd = filepath.Dir(vd)
+		generatedPatches = append(generatedPatches, []*exec.Cmd{
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"go", "mod", "tidy",
+			), filepath.Join(dir, vd)), os.Environ()...),
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"go", "mod", "vendor",
+			), filepath.Join(dir, vd)), os.Environ()...),
+			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"go", "mod", "verify",
+			), filepath.Join(dir, vd)), os.Environ()...)}...)
+		addFiles = append(addFiles, []string{
+			filepath.Join(vd, "vendor"),
+			filepath.Join(vd, "go.mod"),
+			filepath.Join(vd, "go.sum"),
+		}...)
 	}
 
 	generatedPatches = append(generatedPatches, []*exec.Cmd{

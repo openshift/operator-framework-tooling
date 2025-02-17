@@ -17,6 +17,7 @@ usage() {
 GITHUB_USER=$USER
 SYNC_ARGS=""
 SYNC_DIR=$PWD
+SYNC_BRANCH=master
 
 # Get the options
 while getopts "hu:a:d:" option; do
@@ -43,8 +44,12 @@ TOOLS_REPO_DIR=$(dirname "$( cd $(dirname $0) ; pwd)")
 # Cleanup from last time
 reset-repo () {
     git reset HEAD --hard
-    git checkout master
-    git reset origin/master --hard
+    # if the main branch exists, use that instead
+    if git show-ref --verify --quiet refs/heads/main; then
+        SYNC_BRANCH=main
+    fi
+    git checkout ${SYNC_BRANCH}
+    git reset origin/${SYNC_BRANCH} --hard
     git clean -fdx
     git reflog expire --expire-unreachable=now --all
     git gc --prune=now

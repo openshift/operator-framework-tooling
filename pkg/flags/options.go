@@ -30,7 +30,7 @@ const (
 
 	DefaultPRAssignee = "openshift/openshift-team-operator-framework"
 
-	DefaultBaseBranch = "master"
+	DefaultBaseBranch = "main"
 )
 
 type Options struct {

@@ -25,6 +25,9 @@ import (
 
 const (
 	githubRepo = "operator-framework-olm"
+	// Branch name used upstream
+	// This should change to "main" when upstream starts using that name
+	upstreamBranch = "master"
 )
 
 var depRepos = []string{
@@ -32,15 +35,23 @@ var depRepos = []string{
 	"operator-framework/operator-registry",
 }
 
-func DefaultOptions() Options {
+func DefaultOptions(ctx context.Context, logger *logrus.Logger) Options {
+	// Determine which branch to use
+	baseBranch := "main"
+	if _, err := internal.RunCommand(logger.WithField("phase", "default options"), exec.CommandContext(ctx,
+		"git", "show-ref", "--verify", "--quiet", "refs/heads/main")); err != nil {
+		baseBranch = "master"
+	}
 	opts := Options{
 		stagingDir: "staging/",
-		centralRef: "origin/master",
+		centralRef: "origin/" + baseBranch,
 		history:    1,
 		Options:    flags.DefaultOptions(),
 	}
+	opts.Options.PRBaseBranch = baseBranch
 	opts.Options.GithubRepo = githubRepo
 	opts.Options.DelayManifestGeneration = true
+
 	return opts
 }
 
@@ -239,8 +250,8 @@ func getTagOrCommit(ctx context.Context, repo string, dir string, opts Options, 
 func calculateRepoRefs(ctx context.Context, logger *logrus.Entry, opts Options) (map[string]string, error) {
 	repoRefs := map[string]string{}
 
-	// for operator-lifecycle-manager, always use master
-	repoRefs["operator-framework/operator-lifecycle-manager"] = "master"
+	// for operator-lifecycle-manager, always use the upstream branch
+	repoRefs["operator-framework/operator-lifecycle-manager"] = upstreamBranch
 
 	// Create a temporary worktree of upstream OLM to figure out what dependency versions we are moving to
 	var remote string
@@ -254,7 +265,7 @@ func calculateRepoRefs(ctx context.Context, logger *logrus.Entry, opts Options) 
 	if _, err := internal.RunCommand(logger, exec.CommandContext(ctx,
 		"git", "fetch",
 		remote,
-		"master",
+		upstreamBranch,
 	)); err != nil {
 		return nil, err
 	}
@@ -405,7 +416,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 		if err != nil {
 			// This could be due to the lastCommit being beyond the tag, in this case,
 			// we'd see an "Invalid symmetric difference expression" error.
-			// If so, fetch the master branch, and then see if the latestCommit is in there.
+			// If so, fetch the upstream branch, and then see if the latestCommit is in there.
 			// If it is, then downstream has moved beyond "where it should be".
 			// This is ok, we shouldn't error out
 			if !strings.Contains(output, "Invalid symmetric difference expression") {
@@ -415,7 +426,7 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, stagingDir, cen
 			if _, err2 := internal.RunCommand(repoLogger, exec.CommandContext(ctx,
 				"git", "fetch",
 				remote,
-				"master",
+				upstreamBranch,
 			)); err2 != nil {
 				return nil, err2
 			}

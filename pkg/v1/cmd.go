@@ -22,8 +22,6 @@ import (
 )
 
 const (
-	defaultBranch = "main"
-
 	TideMergeMethodMergeLabel = "tide/merge-method-merge"
 	KindSyncLabel             = "kind/sync"
 )
@@ -32,7 +30,6 @@ func DefaultOptions() Options {
 	opts := Options{
 		Options: flags.DefaultOptions(),
 	}
-	opts.Options.PRBaseBranch = defaultBranch
 	return opts
 }
 

@@ -11,8 +11,11 @@ import (
 )
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	logger := logrus.New()
-	opts := v0.DefaultOptions()
+	opts := v0.DefaultOptions(ctx, logger)
 	opts.Bind(flag.CommandLine)
 	flag.Parse()
 
@@ -22,9 +25,6 @@ func main() {
 
 	logLevel, _ := logrus.ParseLevel(opts.LogLevel)
 	logger.SetLevel(logLevel)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
 
 	if err := v0.Run(ctx, logger, opts); err != nil {
 		logrus.WithError(err).Fatal("failed to execute")

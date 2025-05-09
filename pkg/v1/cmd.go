@@ -94,6 +94,9 @@ type Config struct {
 func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	commits := map[string]Config{}
 	var err error
+
+	logMainHead(ctx, logger.WithField("phase", "detect"), dirMap["operator-controller"])
+
 	if opts.CommitFileInput != "" {
 		rawCommits, err := os.ReadFile(opts.CommitFileInput)
 		if err != nil {
@@ -118,6 +121,8 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			return fmt.Errorf("could not write commits: %w", err)
 		}
 	}
+
+	logMainHead(ctx, logger.WithField("phase", "detect"), dirMap["operator-controller"])
 
 	// Get the tools the repo needs via bingo
 	if err := internal.RunBingo(ctx, logger.WithField("phase", "bingo")); err != nil {
@@ -238,7 +243,7 @@ func determineDownstreamHead(ctx context.Context, logger *logrus.Entry, dir, rep
 	if _, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 		"git", "fetch", "--tags", downstreamRemote(repo, opts),
 	), dir)); err != nil {
-		return "", fmt.Errorf("failed to fetch upstream: %w", err)
+		return "", fmt.Errorf("failed to fetch downstream: %w", err)
 	}
 	commitSha, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 		"git", "rev-parse", "FETCH_HEAD",
@@ -783,4 +788,21 @@ func writeCommitCheckerFile(ctx context.Context, logger *logrus.Entry, org, repo
 		}
 	}
 	return nil
+}
+
+func logMainHead(ctx context.Context, logger *logrus.Entry, dir string) {
+	var (
+		mainCommit string
+		headCommit string
+		err        error
+	)
+	if headCommit, err = internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+		"git", "rev-parse", "HEAD"), dir)); err != nil {
+		logger.WithError(err).Fatal("unable to get HEAD commit")
+	}
+	if mainCommit, err = internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+		"git", "rev-parse", "main"), dirMap["operator-controller"])); err != nil {
+		logger.WithError(err).Fatal("unable to get main commit")
+	}
+	logger.WithField("main", strings.TrimSpace(mainCommit)).WithField("head", strings.TrimSpace(headCommit)).Info("retreived head and main")
 }

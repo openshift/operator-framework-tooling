@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.23-openshift-4.20 as builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.20 as builder
 
 WORKDIR /src/github.com/openshift/operator-framework-tooling
 COPY ./cmd/ ./cmd/

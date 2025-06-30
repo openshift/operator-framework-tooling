@@ -88,6 +88,7 @@ func (o *Options) Validate() error {
 // Config describes how to update a repo to the intended state.
 type Config struct {
 	Target     internal.Commit   `json:"target"`
+	TargetList []internal.Commit `json:"targetList"`
 	Additional []internal.Commit `json:"additional"`
 }
 
@@ -185,7 +186,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				fmt.Println(strings.Repeat("=", len(s)))
 				fmt.Println(s)
 				fmt.Println(strings.Repeat("=", len(s)))
-				s = internal.GetBodyV1(config.Target, config.Additional, strings.Split(opts.Assign, ","))
+				s = internal.GetBodyV1(config.TargetList, config.Additional, strings.Split(opts.Assign, ","))
 				fmt.Println(s)
 				for _, label := range labelsToAdd {
 					fmt.Printf("/label %s\n", label)
@@ -230,7 +231,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)
 			}
 			if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, fork, title,
-				internal.GetBodyV1(config.Target, config.Additional, strings.Split(opts.Assign, ",")),
+				internal.GetBodyV1(config.TargetList, config.Additional, strings.Split(opts.Assign, ",")),
 				opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
 				return fmt.Errorf("PR creation failed.: %w", err)
 			}
@@ -370,8 +371,13 @@ func detectNewCommits(ctx context.Context, logger *logrus.Entry, directories map
 		if err != nil {
 			return nil, err
 		}
+		commitList, err := getUpstreamCommitList(ctx, logger, name, directories[name])
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve upstream commits: %w", err)
+		}
 		target[name] = Config{
 			Target:     commit,
+			TargetList: commitList,
 			Additional: additional,
 		}
 	}
@@ -398,8 +404,13 @@ func detectNewOperatorControllerCommits(ctx context.Context, logger *logrus.Entr
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve additional commits: %w", err), false
 	}
+	commitList, err := getUpstreamCommitList(ctx, logger, "operator-controller", dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve upstream commits: %w", err), false
+	}
 	return &Config{
 		Target:     commit,
+		TargetList: commitList,
 		Additional: additional,
 	}, nil, false
 }
@@ -413,6 +424,34 @@ func isUpToDate(ctx context.Context, logger *logrus.Entry, repo, dir, commit str
 		return true
 	}
 	return false
+}
+
+func getUpstreamCommitList(ctx context.Context, logger *logrus.Entry, repo, dir string) ([]internal.Commit, error) {
+	rawCommits, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+		"git", "log", internal.PrettyFormat, "FETCH_HEAD", "^main",
+	), dir))
+	if err != nil {
+		return nil, err
+	}
+	var upstreamCommits []internal.Commit
+
+	for _, line := range strings.Split(rawCommits, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		info, err := internal.ParseFormat(line)
+		if err != nil {
+			return nil, err
+		}
+		info.Repo = repo
+		logger = logger.WithFields(logrus.Fields{
+			"commit":  info.Hash,
+			"message": info.Message,
+		})
+		upstreamCommits = append(upstreamCommits, info)
+	}
+	return upstreamCommits, nil
 }
 
 var upstreamCommitRegex = regexp.MustCompile(`^UPSTREAM: (revert: )?(([\w.-]+/[\w-.-]+)?: )?(\d+:|<carry>:|<drop>:)`)

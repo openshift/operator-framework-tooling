@@ -107,26 +107,24 @@ func GetBody(commits []Commit, assign []string) string {
 	return body
 }
 
-func GetBodyV1(target Commit, commits []Commit, assign []string) string {
+func GetBodyV1(targetList []Commit, commits []Commit, assign []string) string {
 	lines := []string{
-		"The downstream repository has been updated through the following upstream commit:",
+		"The downstream repository has been updated with the following following upstream commits:",
 		"",
 		"| Date | Commit | Author | Message |",
 		"| -    | -      | -      | -       |",
 	}
-	lines = append(lines, fmt.Sprintf("|%s|[operator-framework/%s@%s](https://github.com/operator-framework/%s/commit/%s)|%s|%s|",
-		target.Date.Format(time.DateTime),
-		target.Repo,
-		target.Hash[0:7],
-		target.Repo,
-		target.Hash,
-		target.Author,
-		target.Message,
-	))
-	lines = append(lines, fmt.Sprintf("||[upstream commit list](https://github.com/operator-framework/%s/commits/%s)|||",
-		target.Repo,
-		target.Hash,
-	))
+	for _, commit := range targetList {
+		lines = append(lines, fmt.Sprintf("|%s|[operator-framework/%s@%s](https://github.com/operator-framework/%s/commit/%s)|%s|%s|",
+			commit.Date.Format(time.DateTime),
+			commit.Repo,
+			commit.Hash[0:7],
+			commit.Repo,
+			commit.Hash,
+			commit.Author,
+			commit.Message,
+		))
+	}
 	lines = append(lines,
 		"",
 		"The `vendor/` directory has been updated and the following commits were carried:",

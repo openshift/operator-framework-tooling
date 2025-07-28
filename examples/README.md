@@ -5,7 +5,7 @@ downstreaming job.
 
 ## How to Run
 
-You should probably run this in an new temporary directory, or a directory dedicated to downstreaming.
+You should run this in an new temporary directory, or a directory dedicated to downstreaming.
 It _will_ mess up existing repositories, so the scripts create new/clean repositories as needed.
 
 If your GitHub username is different than your local account username, add it to the command line.

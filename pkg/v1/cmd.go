@@ -575,7 +575,10 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 	for _, commit := range config.Additional {
 		cherryPickCommands := []*exec.Cmd{
 			internal.WithDir(exec.CommandContext(ctx,
-				"git", "cherry-pick", commit.Hash,
+				"git", "cherry-pick",
+				"--strategy=ort",
+				"--strategy-option=ours",
+				commit.Hash,
 			), dir),
 		}
 		goModCommands := []*exec.Cmd{

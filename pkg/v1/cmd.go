@@ -646,7 +646,34 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 	}
 
-	vendorDirs := []string{}
+	modulesLocation := []string{
+		filepath.Join("openshift", "tests-extension"),
+		filepath.Join("openshift", "default-catalog-consistency"),
+	}
+
+	vendorDirs := []string{
+		"openshift/tests-extension",
+		"openshift/default-catalog-consistency",
+	}
+
+	for _, mod := range modulesLocation {
+		modPath := filepath.Join(dir, mod)
+		if _, err := os.Stat(filepath.Join(modPath, "go.mod")); err == nil {
+			logger.Infof("Running tidy/vendor/verify in sub module: %s", mod)
+			for _, cmd := range []*exec.Cmd{
+				exec.CommandContext(ctx, "go", "mod", "tidy"),
+				exec.CommandContext(ctx, "go", "mod", "vendor"),
+				exec.CommandContext(ctx, "go", "mod", "verify"),
+			} {
+				cmd.Dir = modPath
+				cmd.Env = os.Environ()
+				if _, err := internal.RunCommand(logger, cmd); err != nil {
+					return fmt.Errorf("failed vendoring in %s: %w", mod, err)
+				}
+			}
+		}
+	}
+
 	finder := internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 		"find", ".", "-name", "go.mod",
 	), dir), os.Environ()...)

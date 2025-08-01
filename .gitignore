@@ -21,3 +21,6 @@
 go.work
 /v0
 /v1
+
+# IDE
+.idea/*

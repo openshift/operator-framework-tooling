@@ -24,7 +24,6 @@ import (
 const (
 	TideMergeMethodMergeLabel = "tide/merge-method-merge"
 	KindSyncLabel             = "kind/sync"
-	PremergeTestingLabel      = labels.Hold
 )
 
 func DefaultOptions() Options {
@@ -166,7 +165,6 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		// By adding this label we instruct tide to merge instead of using the default behaviour.
 		TideMergeMethodMergeLabel,
 		KindSyncLabel,
-		PremergeTestingLabel,
 	}
 
 	switch flags.Mode(opts.Mode) {

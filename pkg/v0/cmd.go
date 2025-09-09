@@ -198,7 +198,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			return fmt.Errorf("Failed to push changes.: %w", err)
 		}
 
-		var labelsToAdd []string = []string{labels.Hold}
+		var labelsToAdd []string = []string{}
 		if opts.SelfApprove {
 			logger.Infof("Self-approving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
 			labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)

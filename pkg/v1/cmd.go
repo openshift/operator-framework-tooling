@@ -472,12 +472,17 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 		mergeBase = strings.TrimSpace(mergeBaseRaw)
 	}
 
-	var downstreamCommits []internal.Commit
+	// This gets the start and end commits for the prior sync commit.
+	// It looks at merges and takes the first two which *should* be:
+	// 1. "Merge branch 'main' into synchronize"
+	// 2. "Merge pull request #xxx from openshift-bot/synchronize-upstream"
+	// Any other merge commits should be ignored _here_ and will be looked at later
+	var startEndCommits []internal.Commit
 	{
 		rawCommits, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
 			"git", "log", mergeBase+"..main",
 			"--ancestry-path", mergeBase,
-			"--no-merges", "--reverse", "--quiet",
+			"--merges", "--reverse", "--quiet",
 			internal.PrettyFormat,
 		), dir))
 		if err != nil {
@@ -497,9 +502,43 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 				"commit":  info.Hash,
 				"message": info.Message,
 			})
+			if len(startEndCommits) < 1 {
+				logger.Info("Found first merge commit for finding previous carry commits")
+				startEndCommits = append(startEndCommits, info)
+			} else if len(startEndCommits) < 2 {
+				logger.Info("Found second merge commit for finding previous carry commits")
+				startEndCommits = append(startEndCommits, info)
+			} else {
+				logger.Info("Ignoring merge commit")
+			}
+		}
+	}
+	if len(startEndCommits) < 2 {
+		return nil, fmt.Errorf("Found %d start+end commits, expected 2", len(startEndCommits))
+	}
+	startCommit := startEndCommits[0].Hash
+	endCommit := startEndCommits[1].Hash
+
+	var downstreamCommits []internal.Commit
+	// This iterates over the commit list input and saves carry commits
+	processCarryCommits := func(rawCommits string) error {
+		for _, line := range strings.Split(rawCommits, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			info, err := internal.ParseFormat(line)
+			if err != nil {
+				return err
+			}
+			info.Repo = repo
+			logger = logger.WithFields(logrus.Fields{
+				"commit":  info.Hash,
+				"message": info.Message,
+			})
 			messageMatches := upstreamCommitRegex.FindStringSubmatch(info.Message)
 			if len(messageMatches) == 0 || len(messageMatches[0]) == 0 {
-				return nil, fmt.Errorf("unexpected commit message: %s", info.Message)
+				return fmt.Errorf("unexpected commit message: %s", info.Message)
 			}
 
 			drop := ""
@@ -541,7 +580,7 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 					"git", "log", "--pretty=format:%H", "--grep", fmt.Sprintf("(#%s)", match), commit,
 				), dir))
 				if err != nil {
-					return nil, err
+					return err
 				}
 
 				if len(strings.TrimSpace(rawMatches)) == 0 {
@@ -549,6 +588,37 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 					downstreamCommits = append(downstreamCommits, info)
 				}
 			}
+		}
+		return nil
+	}
+
+	// Get the list of previously carried carry commits.
+	{
+		rawCommits, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+			"git", "log", startCommit+".."+endCommit,
+			"--no-merges", "--reverse", "--quiet",
+			internal.PrettyFormat,
+		), dir))
+		if err != nil {
+			return nil, err
+		}
+		if err = processCarryCommits(rawCommits); err != nil {
+			return nil, err
+		}
+	}
+
+	// Get the list of new carry commits.
+	{
+		rawCommits, err := internal.RunCommand(logger, internal.WithDir(exec.CommandContext(ctx,
+			"git", "log", endCommit+"..main",
+			"--no-merges", "--reverse", "--quiet",
+			internal.PrettyFormat,
+		), dir))
+		if err != nil {
+			return nil, err
+		}
+		if err = processCarryCommits(rawCommits); err != nil {
+			return nil, err
 		}
 	}
 	return downstreamCommits, nil

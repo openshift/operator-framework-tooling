@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/openshift/operator-framework-tooling/pkg/flags"
@@ -732,11 +733,11 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 	}
 
-	generatedPatches := []*exec.Cmd{}
+	vendorCommands := []*exec.Cmd{}
 	addFiles := []string{"vendor", "go.mod", "go.sum"}
 	for _, vd := range vendorDirs {
 		vd = filepath.Dir(vd)
-		generatedPatches = append(generatedPatches, []*exec.Cmd{
+		vendorCommands = append(vendorCommands, []*exec.Cmd{
 			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 				"go", "mod", "tidy",
 			), filepath.Join(dir, vd)), os.Environ()...),
@@ -753,7 +754,23 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}...)
 	}
 
-	generatedPatches = append(generatedPatches, []*exec.Cmd{
+	// Run the vendor commands
+	for _, cmd := range vendorCommands {
+		if _, err := internal.RunCommandPauseOnError(logger, cmd, opts.pauseOnCommandError); err != nil {
+			return err
+		}
+	}
+
+	// Make sure file/directory exist before adding
+	addFiles = slices.DeleteFunc(addFiles, func(f string) bool {
+		if !filepath.IsAbs(f) {
+			f = filepath.Join(dir, f)
+		}
+		_, err := os.Stat(f)
+		return err != nil
+	})
+
+	generatedPatches := []*exec.Cmd{
 		// git commit with filenames does not require staging, but since these repos
 		// choose to put vendor in gitignore, we need git add --force to stage those
 		internal.WithDir(exec.CommandContext(ctx,
@@ -776,7 +793,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				"--message", "UPSTREAM: <drop>: remove upstream GitHub configuration"},
 				commitArgs...)...,
 		), dir),
-	}...)
+	}
 
 	commitManifests := []*exec.Cmd{
 		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,

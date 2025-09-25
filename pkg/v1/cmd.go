@@ -640,6 +640,17 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 	}
 
+	manifests := []string{
+		"openshift/catalogd/manifests",
+		"openshift/catalogd/manifests.yaml",
+		"openshift/catalogd/manifests-experimental",
+		"openshift/catalogd/manifests-experimental.yaml",
+		"openshift/operator-controller/manifests",
+		"openshift/operator-controller/manifests.yaml",
+		"openshift/operator-controller/manifests-experimental",
+		"openshift/operator-controller/manifests-experimental.yaml",
+	}
+
 	// then, cherry-pick the additional bits
 	for _, commit := range config.Additional {
 		cherryPickCommands := []*exec.Cmd{
@@ -666,11 +677,6 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				"make", "-f", "openshift/Makefile", "manifests",
 			), dir), os.Environ()...),
 		}
-		cleanManifestsCommands := []*exec.Cmd{
-			internal.WithDir(exec.CommandContext(ctx,
-				"git", "rm", "-rf", "--ignore-unmatch", "openshift/manifests",
-			), dir),
-		}
 
 		commitCommands := []*exec.Cmd{
 			internal.WithDir(exec.CommandContext(ctx,
@@ -687,9 +693,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 
 		commands := goModCommands
-		if opts.DelayManifestGeneration {
-			commands = append(commands, cleanManifestsCommands...)
-		} else {
+		if !opts.DelayManifestGeneration {
 			commands = append(commands, generateManifestsCommands...)
 		}
 		commands = append(commands, commitCommands...)
@@ -795,25 +799,22 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		), dir),
 	}
 
-	commitManifests := []*exec.Cmd{
-		internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
-			"make", "-f", "openshift/Makefile", "manifests",
-		), dir), os.Environ()...),
-		internal.WithDir(exec.CommandContext(ctx,
-			"git", "add", "--force", "openshift/manifests",
-		), dir),
-		// git commit with filenames does not require staging, but since these repos
-		// choose to put vendor in gitignore, we need git add --force to stage those
-		internal.WithDir(exec.CommandContext(ctx,
-			"git", append([]string{"commit", "openshift/manifests",
-				"--message", "UPSTREAM: <drop>: Generate manifests",
-			}, commitArgs...)...,
-		), dir),
-	}
-
 	commands := generatedPatches
 	if opts.DelayManifestGeneration {
-		commands = append(commands, commitManifests...)
+		commands = append(commands, internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+			"make", "-f", "openshift/Makefile", "manifests",
+		), dir), os.Environ()...))
+		for _, m := range manifests {
+			// git commit with filenames does not require staging, but since these repos
+			// choose to put vendor in gitignore, we need git add --force to stage those
+			commands = append(commands, internal.WithDir(exec.CommandContext(ctx,
+				"git", "add", "--force", m), dir))
+		}
+		commands = append(commands, internal.WithDir(exec.CommandContext(ctx,
+			"git", append([]string{"commit",
+				"--message", "UPSTREAM: <drop>: Generate manifests",
+			}, commitArgs...)...,
+		), dir))
 	}
 
 	// finally, apply our generated patches on top

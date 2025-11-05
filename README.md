@@ -56,6 +56,16 @@ The jobs are defined in:
 
 * [infra-periodics.yaml](https://github.com/openshift/release/blob/master/ci-operator/jobs/infra-periodics.yaml)
 
+## Post-Submit Job
+
+This tool is also intended to be run as a post-submit job with minimal human interaction. This updates any outstanding upstream sync PRs.
+
+* [OLMv1 post-submit job](https://prow.ci.openshift.org/?job=post-ci-openshift-operator-framework-operator-controller-main-refresh-bumper-pr)
+
+The job is defined in:
+
+* [openshift-operator-framework-operator-controller-main-postsubmits.yaml](https://github.com/openshift/release/blob/master/ci-operator/jobs/openshift/operator-framework-operator-controller/openshift-operator-framework-operator-controller-main-postsubmits.yaml)
+
 ## Manual Merging
 
 Running the merge tools manually will allow you to do the merging in a local repository to fix any issues that the tool itself cannot handle.

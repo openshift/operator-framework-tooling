@@ -7,7 +7,7 @@ COPY go.mod ./
 RUN go build -o v1 -mod=mod ./cmd/v1/...
 RUN go install -mod=mod github.com/bwplotka/bingo@v0.9.0
 
-FROM registry.ci.openshift.org/ocp/4.21:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.21:base-rhel9-minimal-test
 
 RUN dnf install -y git glibc make
 COPY --from=builder /src/github.com/openshift/operator-framework-tooling/v1 /usr/bin/bumper

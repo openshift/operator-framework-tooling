@@ -41,6 +41,7 @@ type Options struct {
 	pauseOnCommandError     bool
 	printPullRequestComment bool
 	forceRemerge            bool
+	assumeCarry             bool
 
 	fetchHead string
 
@@ -61,6 +62,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.BoolVar(&o.pauseOnCommandError, "pause-on-command-error", o.pauseOnCommandError, "Pause after manifest generation error.")
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 	fs.StringVar(&o.fetchHead, "fetch-head", o.fetchHead, "Upstream commit/branch/tag to sync.")
+	fs.BoolVar(&o.assumeCarry, "assume-carry-commit", o.assumeCarry, "Treat unrecognized commit headlines as UPSTREAM: <carry> commits.")
 
 	o.Options.Bind(fs)
 }
@@ -539,7 +541,12 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 			})
 			messageMatches := upstreamCommitRegex.FindStringSubmatch(info.Message)
 			if len(messageMatches) == 0 || len(messageMatches[0]) == 0 {
-				return fmt.Errorf("unexpected commit message: %s", info.Message)
+				if !opts.assumeCarry {
+					return fmt.Errorf("unexpected commit message: %s", info.Message)
+				}
+				logger.WithField("message", info.Message).Info("unepxected commit message, assuming carry commit")
+				info.Message = "UPSTREAM: <carry>: " + info.Message
+				messageMatches = upstreamCommitRegex.FindStringSubmatch(info.Message)
 			}
 
 			drop := ""
@@ -661,6 +668,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 				commit.Hash,
 			), dir),
 		}
+
 		goModCommands := []*exec.Cmd{
 			internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
 				"go", "mod", "tidy",
@@ -718,6 +726,23 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		for _, cmd := range commands {
 			if _, err := internal.RunCommandPauseOnError(logger, cmd, opts.pauseOnCommandError); err != nil {
 				return err
+			}
+		}
+		if opts.assumeCarry {
+			logCommand := internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+				"git", "log", "-1", "--pretty=format:%B",
+			), filepath.Join(dir, "openshift")), os.Environ()...)
+			msg, err := internal.RunCommand(logger, logCommand)
+			if err != nil {
+				return err
+			}
+			if !strings.HasPrefix(msg, "UPSTREAM:") {
+				updateCommitMessage := internal.WithEnv(internal.WithDir(exec.CommandContext(ctx,
+					"git", "commit", "--amend", "-m", "UPSTREAM: <carry>: "+msg,
+				), filepath.Join(dir, "openshift")), os.Environ()...)
+				if _, err := internal.RunCommand(logger, updateCommitMessage); err != nil {
+					return err
+				}
 			}
 		}
 	}

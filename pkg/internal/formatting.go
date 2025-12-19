@@ -7,6 +7,8 @@ import (
 	"html"
 	"os"
 	"os/exec"
+	"regexp"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -107,13 +109,68 @@ func GetBody(commits []Commit, assign []string) string {
 	return body
 }
 
-func GetBodyV1(targetList []Commit, commits []Commit, assign []string) string {
-	lines := []string{
+// ExtractJiraTickets extracts JIRA tickets from full commit messages based on the provided project names.
+// Returns a sorted, deduplicated list of JIRA tickets found in the format PROJECT-NUMBER.
+func ExtractJiraTickets(ctx context.Context, logger *logrus.Entry, commits []Commit, jiraProjects []string, dir string) []string {
+	if len(jiraProjects) == 0 || len(commits) == 0 {
+		return nil
+	}
+
+	// Build regex pattern from jira projects: (?:PROJECT1|PROJECT2)-\d+
+	projectPattern := strings.Join(jiraProjects, "|")
+	pattern := fmt.Sprintf(`\b(?:%s)-\d+\b`, projectPattern)
+	jiraRegex := regexp.MustCompile(pattern)
+
+	ticketSet := make(map[string]bool)
+	for i := range commits {
+		// Get full commit message body
+		fullMessage, err := RunCommand(logger, WithDir(exec.CommandContext(ctx,
+			"git", "show", "-s", "--format=%B", commits[i].Hash,
+		), dir))
+		if err != nil {
+			logger.WithError(err).WithField("commit", commits[i].Hash).Warn("failed to fetch full commit message, using subject line only")
+			fullMessage = commits[i].Message
+		}
+
+		matches := jiraRegex.FindAllString(fullMessage, -1)
+		for _, match := range matches {
+			ticketSet[match] = true
+		}
+	}
+
+	if len(ticketSet) == 0 {
+		return nil
+	}
+
+	// Convert map to sorted slice
+	tickets := make([]string, 0, len(ticketSet))
+	for ticket := range ticketSet {
+		tickets = append(tickets, ticket)
+	}
+	sort.Strings(tickets)
+
+	return tickets
+}
+
+func GetBodyV1(targetList []Commit, commits []Commit, assign []string, jiraTickets []string) string {
+	lines := []string{}
+
+	// Prepend JIRA tickets if provided
+	if len(jiraTickets) > 0 {
+		lines = append(lines, "**JIRA Tickets:**")
+		lines = append(lines, "")
+		for _, ticket := range jiraTickets {
+			lines = append(lines, fmt.Sprintf("- %s", ticket))
+		}
+		lines = append(lines, "")
+	}
+
+	lines = append(lines,
 		"The downstream repository has been updated with the following following upstream commits:",
 		"",
 		"| Date | Commit | Author | Message |",
 		"| -    | -      | -      | -       |",
-	}
+	)
 	for _, commit := range targetList {
 		lines = append(lines, fmt.Sprintf("|%s|[operator-framework/%s@%s](https://github.com/operator-framework/%s/commit/%s)|%s|%s|",
 			commit.Date.Format(time.DateTime),

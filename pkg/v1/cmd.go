@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/openshift/operator-framework-tooling/pkg/flags"
 	"github.com/openshift/operator-framework-tooling/pkg/internal"
@@ -26,6 +27,21 @@ const (
 	TideMergeMethodMergeLabel = "tide/merge-method-merge"
 	KindSyncLabel             = "kind/sync"
 )
+
+// stringSliceFlag is a custom flag type that allows a flag to be specified multiple times
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) String() string {
+	if s == nil {
+		return ""
+	}
+	return strings.Join(*s, ",")
+}
+
+func (s *stringSliceFlag) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
 
 func DefaultOptions() Options {
 	opts := Options{
@@ -48,6 +64,8 @@ type Options struct {
 	dropCommits     string
 	listDropCommits []string
 
+	jiraProjects stringSliceFlag
+
 	flags.Options
 }
 
@@ -63,6 +81,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 	fs.StringVar(&o.fetchHead, "fetch-head", o.fetchHead, "Upstream commit/branch/tag to sync.")
 	fs.BoolVar(&o.assumeCarry, "assume-carry-commit", o.assumeCarry, "Treat unrecognized commit headlines as UPSTREAM: <carry> commits.")
+	fs.Var(&o.jiraProjects, "jira", "Jira project name to search for in commit descriptions (can be specified multiple times).")
 
 	o.Options.Bind(fs)
 }
@@ -84,7 +103,30 @@ func (o *Options) Validate() error {
 		o.listDropCommits = strings.Split(o.dropCommits, ",")
 	}
 
+	// Validate jira project names are alphanumeric and check for duplicates
+	seen := make(map[string]bool)
+	for _, project := range o.jiraProjects {
+		if !isAlphanumeric(project) {
+			return fmt.Errorf("--jira value must be alphanumeric: %q", project)
+		}
+		if seen[project] {
+			return fmt.Errorf("--jira value specified multiple times: %q", project)
+		}
+		seen[project] = true
+	}
+
 	return nil
+}
+
+// isAlphanumeric checks if a string contains only alphanumeric characters
+func isAlphanumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	// IndexFunc returns -1 if no rune satisfies the predicate (i.e., all are alphanumeric)
+	return strings.IndexFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}) == -1
 }
 
 // Config describes how to update a repo to the intended state.
@@ -182,13 +224,30 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	case flags.Synchronize:
 		cherryPickAll()
 		if opts.printPullRequestComment {
+			baseTitle := "Synchronize From Upstream Repositories"
 			for repo, config := range commits {
+				// Extract JIRA tickets once (do extraction first for logging)
+				var jiraTickets []string
+				if len(opts.jiraProjects) > 0 {
+					jiraTickets = internal.ExtractJiraTickets(ctx, logger.WithField("phase", "jira-extraction"), config.TargetList, []string(opts.jiraProjects), dirMap[repo])
+				}
+
+				// Build PR title using extracted tickets
+				title := "NO-ISSUE: " + baseTitle
+				if len(jiraTickets) > 0 {
+					title = strings.Join(jiraTickets, ",") + ": " + baseTitle
+				}
+
+				// Build body using extracted tickets
+				body := internal.GetBodyV1(config.TargetList, config.Additional, strings.Split(opts.Assign, ","), jiraTickets)
+
+				// Now print the formatted output
 				s := fmt.Sprintf("For repo openshift/operator-framework-%s", repo)
 				fmt.Println(strings.Repeat("=", len(s)))
 				fmt.Println(s)
 				fmt.Println(strings.Repeat("=", len(s)))
-				s = internal.GetBodyV1(config.TargetList, config.Additional, strings.Split(opts.Assign, ","))
-				fmt.Println(s)
+				fmt.Printf("Title: %s\n\n", title)
+				fmt.Println(body)
 				for _, label := range labelsToAdd {
 					fmt.Printf("/label %s\n", label)
 				}
@@ -211,8 +270,23 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		stderr := bumper.HideSecretsWriter{Delegate: os.Stderr, Censor: secret.Censor}
 
 		remoteBranch := "synchronize-upstream"
-		title := "NO-ISSUE: Synchronize From Upstream Repositories"
+		baseTitle := "Synchronize From Upstream Repositories"
 		for repo, config := range commits {
+			// Extract JIRA tickets once (do extraction first for logging)
+			var jiraTickets []string
+			if len(opts.jiraProjects) > 0 {
+				jiraTickets = internal.ExtractJiraTickets(ctx, logger.WithField("phase", "jira-extraction"), config.TargetList, []string(opts.jiraProjects), dirMap[repo])
+			}
+
+			// Build PR title using extracted tickets
+			title := "NO-ISSUE: " + baseTitle
+			if len(jiraTickets) > 0 {
+				title = strings.Join(jiraTickets, ",") + ": " + baseTitle
+			}
+
+			// Build body using extracted tickets
+			body := internal.GetBodyV1(config.TargetList, config.Additional, strings.Split(opts.Assign, ","), jiraTickets)
+
 			fork, err := client.EnsureFork(opts.GithubLogin, "openshift", "operator-framework-"+repo)
 			if err != nil {
 				return fmt.Errorf("could not ensure fork: %w", err)
@@ -231,8 +305,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 				logger.Infof("Self-approving PR by adding the %q and %q labels", labels.Approved, labels.LGTM)
 				labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)
 			}
-			if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, fork, title,
-				internal.GetBodyV1(config.TargetList, config.Additional, strings.Split(opts.Assign, ",")),
+			if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, fork, title, body,
 				opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
 				return fmt.Errorf("PR creation failed.: %w", err)
 			}

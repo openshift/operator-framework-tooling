@@ -922,7 +922,7 @@ func applyConfig(ctx context.Context, logger *logrus.Entry, org, repo, branch, d
 		}
 	}
 
-	return writeCommitCheckerFile(ctx, logger, org, repo, branch, config.Target.Hash, dir, commitArgs)
+	return writeCommitCheckerFile(ctx, logger, org, repo, branch, dir, commitArgs)
 }
 
 func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits map[string]string, commitArgs []string) error {
@@ -968,7 +968,7 @@ func rewriteGoMod(ctx context.Context, logger *logrus.Entry, dir string, commits
 	return nil
 }
 
-func writeCommitCheckerFile(ctx context.Context, logger *logrus.Entry, org, repo, branch, expectedMergeBase, dir string, commitArgs []string) error {
+func writeCommitCheckerFile(ctx context.Context, logger *logrus.Entry, org, repo, branch, dir string, commitArgs []string) error {
 	// TODO: move the upstream commit-checker code out of `main` package so we can import this and the regex
 	var config = struct {
 		// UpstreamOrg is the organization of the upstream repository
@@ -977,13 +977,10 @@ func writeCommitCheckerFile(ctx context.Context, logger *logrus.Entry, org, repo
 		UpstreamRepo string `json:"upstreamRepo,omitempty"`
 		// UpstreamBranch is the branch from the upstream repository we're tracking
 		UpstreamBranch string `json:"upstreamBranch,omitempty"`
-		// ExpectedMergeBase is the latest commit from the upstream that is expected to be present in this downstream
-		ExpectedMergeBase string `json:"expectedMergeBase,omitempty"`
 	}{
-		UpstreamOrg:       org,
-		UpstreamRepo:      repo,
-		UpstreamBranch:    branch,
-		ExpectedMergeBase: expectedMergeBase,
+		UpstreamOrg:    org,
+		UpstreamRepo:   repo,
+		UpstreamBranch: branch,
 	}
 
 	raw, err := yaml.Marshal(&config)

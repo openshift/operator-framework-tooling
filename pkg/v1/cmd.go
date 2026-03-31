@@ -212,6 +212,19 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		KindSyncLabel,
 	}
 
+	// Extract JIRA tickets before cherryPickAll so the upstream commits are
+	// guaranteed accessible (they were just fetched during detectNewCommits).
+	// After cherryPickAll the git state changes in ways that can cause git show
+	// to fail on upstream commit hashes, falling back to subject-only messages
+	// which may miss body-only JIRA references.
+	baseTitle := "Synchronize From Upstream Repositories"
+	repoJiraTickets := map[string][]string{}
+	if len(opts.jiraProjects) > 0 {
+		for repo, config := range commits {
+			repoJiraTickets[repo] = internal.ExtractJiraTickets(ctx, logger.WithField("phase", "jira-extraction"), config.TargetList, []string(opts.jiraProjects), dirMap[repo])
+		}
+	}
+
 	switch flags.Mode(opts.Mode) {
 	case flags.Summarize:
 		for repo, info := range commits {
@@ -224,13 +237,8 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 	case flags.Synchronize:
 		cherryPickAll()
 		if opts.printPullRequestComment {
-			baseTitle := "Synchronize From Upstream Repositories"
 			for repo, config := range commits {
-				// Extract JIRA tickets once (do extraction first for logging)
-				var jiraTickets []string
-				if len(opts.jiraProjects) > 0 {
-					jiraTickets = internal.ExtractJiraTickets(ctx, logger.WithField("phase", "jira-extraction"), config.TargetList, []string(opts.jiraProjects), dirMap[repo])
-				}
+				jiraTickets := repoJiraTickets[repo]
 
 				// Build PR title using extracted tickets
 				title := "NO-ISSUE: " + baseTitle
@@ -270,13 +278,8 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		stderr := bumper.HideSecretsWriter{Delegate: os.Stderr, Censor: secret.Censor}
 
 		remoteBranch := "synchronize-upstream"
-		baseTitle := "Synchronize From Upstream Repositories"
 		for repo, config := range commits {
-			// Extract JIRA tickets once (do extraction first for logging)
-			var jiraTickets []string
-			if len(opts.jiraProjects) > 0 {
-				jiraTickets = internal.ExtractJiraTickets(ctx, logger.WithField("phase", "jira-extraction"), config.TargetList, []string(opts.jiraProjects), dirMap[repo])
-			}
+			jiraTickets := repoJiraTickets[repo]
 
 			// Build PR title using extracted tickets
 			title := "NO-ISSUE: " + baseTitle

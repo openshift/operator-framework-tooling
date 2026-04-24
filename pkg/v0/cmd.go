@@ -205,7 +205,11 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		}
 		if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, opts.GithubRepo, title,
 			internal.GetBody(commits, strings.Split(opts.Assign, ",")), opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
-			return fmt.Errorf("PR creation failed.: %w", err)
+			if strings.Contains(err.Error(), "failed to add label") {
+				logger.WithError(err).Warn("PR created but failed to add labels")
+			} else {
+				return fmt.Errorf("PR creation failed.: %w", err)
+			}
 		}
 	}
 	return nil

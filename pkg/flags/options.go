@@ -28,7 +28,7 @@ const (
 	GithubOrg   = "openshift"
 	GithubLogin = "openshift-bot"
 
-	DefaultPRAssignee = "openshift/openshift-team-operator-framework"
+	DefaultPRAssignee = "openshift/openshift-team-operator-runtime"
 
 	DefaultBaseBranch = "main"
 )
@@ -124,7 +124,6 @@ func (o *Options) Validate() error {
 		if o.Assign == "" {
 			return fmt.Errorf("--assign is mandatory")
 		}
-
 		if err := o.GitHubOptions.Validate(o.DryRun); err != nil {
 			return err
 		}

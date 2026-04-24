@@ -3,7 +3,9 @@ set -euo pipefail
 
 usage() {
     echo "This script will run a local OLMv1 downstream operation, to allow someone to"
-    echo "debug a failure."
+    echo "debug a failure. It will push the resulting branch and create a pull request."
+    echo ""
+    echo "Requires the 'gh' CLI to be authenticated ('gh auth login') before running."
     echo ""
     echo "Usage: $0 [-u github-username] [-a \"-extra-sync args\"] [-d /path/to/the/sync/dir]"
     echo ""
@@ -17,6 +19,8 @@ usage() {
 GITHUB_USER=$USER
 SYNC_ARGS=""
 SYNC_DIR=$PWD
+GITHUB_TOKEN_PATH="$(mktemp "${HOME}/.github-token.XXXXXX")"
+trap 'rm -f "$GITHUB_TOKEN_PATH"' EXIT
 
 # Get the options
 while getopts "hu:a:d:" option; do
@@ -71,10 +75,23 @@ setup-repo operator-framework-operator-controller
 
 make -C $TOOLS_REPO_DIR
 
+if ! command -v gh &> /dev/null; then
+    echo "error: 'gh' CLI not found in PATH. Install it and run 'gh auth login' first."
+    exit 1
+fi
+
+# Create the GitHub token file from the gh CLI's stored credentials.
+# Run 'gh auth login' first if you haven't already.
+gh auth token > "${GITHUB_TOKEN_PATH}"
+chmod 600 "${GITHUB_TOKEN_PATH}"
+
 set -x
 
 ${TOOLS_REPO_DIR}/v1  \
-       --mode=synchronize \
+       --mode=publish \
+       --dry-run=false \
+       --github-login=${GITHUB_USER} \
+       --github-token-path=${GITHUB_TOKEN_PATH} \
        --operator-controller-dir=${SYNC_DIR}/operator-framework-operator-controller \
        --pause-on-cherry-pick-error \
        --log-level=debug \

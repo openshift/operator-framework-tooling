@@ -97,7 +97,7 @@ func GetBody(commits []Commit, assign []string) string {
 	}
 	lines = append(lines, "", "This pull request is expected to merge without any human intervention. If tests are failing here, changes must land upstream to fix any issues so that future downstreaming efforts succeed.", "")
 	for _, who := range assign {
-		lines = append(lines, fmt.Sprintf("/cc @%s", who))
+		lines = append(lines, fmt.Sprintf("/assign @%s", who))
 	}
 
 	body := strings.Join(lines, "\n")
@@ -205,7 +205,7 @@ func GetBodyV1(targetList []Commit, commits []Commit, assign []string, jiraTicke
 	}
 	lines = append(lines, "", "This pull request is expected to merge without any human intervention. If tests are failing here, changes must land upstream to fix any issues so that future downstreaming efforts succeed.", "")
 	for _, who := range assign {
-		lines = append(lines, fmt.Sprintf("/cc @%s", who))
+		lines = append(lines, fmt.Sprintf("/assign @%s", who))
 	}
 
 	body := strings.Join(lines, "\n")

@@ -1,6 +1,6 @@
 module github.com/openshift/operator-framework-tooling
 
-go 1.25.7
+go 1.26.3
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0

@@ -76,6 +76,16 @@ func WithDir(command *exec.Cmd, dir string) *exec.Cmd {
 	return command
 }
 
+// IsNoCommitsBetweenError returns true if err is (or wraps) a GitHub API
+// error indicating that a pull request could not be created because there
+// are no commits between the base and head branches. This happens when the
+// synchronize-upstream branch we just pushed already matches the base branch
+// exactly, e.g. because a previous or concurrent run already published the
+// same changes. It is a benign no-op, not a failure.
+func IsNoCommitsBetweenError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "No commits between")
+}
+
 func RunCommandPauseOnError(logger *logrus.Entry, cmd *exec.Cmd, pause bool) (string, error) {
 	msg, err := RunCommand(logger, cmd)
 	if err != nil && pause {

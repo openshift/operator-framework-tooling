@@ -74,13 +74,24 @@ func Table(logger *logrus.Logger, commits []Commit, repoBase string) {
 	}
 }
 
-func GetBody(commits []Commit, assign []string) string {
-	lines := []string{
+func GetBody(commits []Commit, assign []string, jiraTickets []string) string {
+	lines := []string{}
+
+	if len(jiraTickets) > 0 {
+		lines = append(lines, "**JIRA Tickets:**")
+		lines = append(lines, "")
+		for _, ticket := range jiraTickets {
+			lines = append(lines, fmt.Sprintf("- %s", ticket))
+		}
+		lines = append(lines, "")
+	}
+
+	lines = append(lines,
 		"The staging/ and vendor/ directories have been synchronized from the upstream repositories, pulling in the following commits:",
 		"",
 		"| Date | Commit | Author | Message |",
 		"| -    | -      | -      | -       |",
-	}
+	)
 	for _, commit := range commits {
 		lines = append(
 			lines,

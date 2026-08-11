@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/openshift/operator-framework-tooling/pkg/flags"
@@ -29,6 +30,31 @@ const (
 	// This should change to "main" when upstream starts using that name
 	upstreamBranch = "master"
 )
+
+// stringSliceFlag is a custom flag type that allows a flag to be specified multiple times
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) String() string {
+	if s == nil {
+		return ""
+	}
+	return strings.Join(*s, ",")
+}
+
+func (s *stringSliceFlag) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
+// isAlphanumeric checks if a string contains only alphanumeric characters
+func isAlphanumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	return strings.IndexFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}) == -1
+}
 
 var depRepos = []string{
 	"operator-framework/api",
@@ -58,15 +84,19 @@ func DefaultOptions(ctx context.Context, logger *logrus.Logger) Options {
 type Options struct {
 	flags.Options
 
-	stagingDir string
-	centralRef string
-	history    int
+	stagingDir              string
+	centralRef              string
+	history                 int
+	jiraProjects            stringSliceFlag
+	printPullRequestComment bool
 }
 
 func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.stagingDir, "staging-dir", o.stagingDir, "Directory for staging repositories.")
 	fs.StringVar(&o.centralRef, "central-ref", o.centralRef, "Git ref for the central branch that will be updated, used as the base for determining what commits need to be cherry-picked.")
 	fs.IntVar(&o.history, "history", o.history, "How many commits back to start searching for missing vendor commits.")
+	fs.Var(&o.jiraProjects, "jira", "Jira project name to search for in commit descriptions (can be specified multiple times).")
+	fs.BoolVar(&o.printPullRequestComment, "print-pull-request-comment", o.printPullRequestComment, "During synchronize mode, print out the pull request comment (for pasting into a PR).")
 
 	o.Options.Bind(fs)
 }
@@ -74,6 +104,17 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 func (o *Options) Validate() error {
 	if err := o.Options.Validate(); err != nil {
 		return err
+	}
+
+	seen := make(map[string]bool)
+	for _, project := range o.jiraProjects {
+		if !isAlphanumeric(project) {
+			return fmt.Errorf("--jira value must be alphanumeric: %q", project)
+		}
+		if seen[project] {
+			return fmt.Errorf("--jira value specified multiple times: %q", project)
+		}
+		seen[project] = true
 	}
 
 	return nil
@@ -174,11 +215,25 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		return nil
 	}
 
+	// Extract JIRA tickets before cherryPickAll so the upstream commits are
+	// guaranteed accessible (they were just fetched during detectNewCommits).
+	baseTitle := "Synchronize From Upstream Repositories"
+	jiraTickets := internal.ExtractJiraTickets(ctx, logger.WithField("phase", "jira-extraction"), missingCommits, []string(opts.jiraProjects), ".")
+
+	title := "NO-ISSUE: " + baseTitle
+	if len(jiraTickets) > 0 {
+		title = strings.Join(jiraTickets, ",") + ": " + baseTitle
+	}
+
 	switch flags.Mode(opts.Mode) {
 	case flags.Summarize:
 		internal.Table(logger, missingCommits, "operator-framework/")
 	case flags.Synchronize:
 		cherryPickAll()
+		if opts.printPullRequestComment {
+			fmt.Printf("Title: %s\n\n", title)
+			fmt.Println(internal.GetBody(commits, strings.Split(opts.Assign, ","), jiraTickets))
+		}
 	case flags.Publish:
 		cherryPickAll()
 		gc, err := opts.GitHubOptions.GitHubClient(opts.DryRun)
@@ -191,7 +246,6 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 		stderr := bumper.HideSecretsWriter{Delegate: os.Stderr, Censor: secret.Censor}
 
 		remoteBranch := "synchronize-upstream"
-		title := "NO-ISSUE: Synchronize From Upstream Repositories"
 		if err := bumper.MinimalGitPush(fmt.Sprintf("https://%s:%s@github.com/%s/%s.git", opts.GithubLogin,
 			string(secret.GetTokenGenerator(opts.GitHubOptions.TokenPath)()), opts.GithubLogin, opts.GithubRepo),
 			remoteBranch, stdout, stderr, opts.DryRun); err != nil {
@@ -204,7 +258,7 @@ func Run(ctx context.Context, logger *logrus.Logger, opts Options) error {
 			labelsToAdd = append(labelsToAdd, labels.Approved, labels.LGTM)
 		}
 		if err := bumper.UpdatePullRequestWithLabels(gc, opts.GithubOrg, opts.GithubRepo, title,
-			internal.GetBody(commits, strings.Split(opts.Assign, ",")), opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
+			internal.GetBody(commits, strings.Split(opts.Assign, ","), jiraTickets), opts.GithubLogin+":"+remoteBranch, opts.PRBaseBranch, remoteBranch, true, labelsToAdd, opts.DryRun); err != nil {
 			switch {
 			case strings.Contains(err.Error(), "failed to add label"):
 				logger.WithError(err).Warn("PR created but failed to add labels")

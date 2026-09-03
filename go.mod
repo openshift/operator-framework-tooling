@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/sirupsen/logrus v1.10.1
+	github.com/sirupsen/logrus v1.10.2
 	k8s.io/test-infra v0.0.0-20231113160404-5e84733188ea
 	sigs.k8s.io/yaml v1.6.0
 )

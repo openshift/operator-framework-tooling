@@ -58,6 +58,7 @@ type Options struct {
 	printPullRequestComment bool
 	forceRemerge            bool
 	assumeCarry             bool
+	assumeDrop              bool
 
 	fetchHead string
 
@@ -81,6 +82,7 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 	fs.StringVar(&o.dropCommits, "drop-commits", o.dropCommits, "Comma-separated list of carry commit SHAs to drop.")
 	fs.StringVar(&o.fetchHead, "fetch-head", o.fetchHead, "Upstream commit/branch/tag to sync.")
 	fs.BoolVar(&o.assumeCarry, "assume-carry-commit", o.assumeCarry, "Treat unrecognized commit headlines as UPSTREAM: <carry> commits.")
+	fs.BoolVar(&o.assumeDrop, "assume-drop-commit", o.assumeDrop, "Treat unrecognized commit headlines as UPSTREAM: <drop> commits.")
 	fs.Var(&o.jiraProjects, "jira", "Jira project name to search for in commit descriptions (can be specified multiple times).")
 
 	o.Options.Bind(fs)
@@ -89,6 +91,9 @@ func (o *Options) Bind(fs *flag.FlagSet) {
 func (o *Options) Validate() error {
 	if err := o.Options.Validate(); err != nil {
 		return err
+	}
+	if o.assumeCarry && o.assumeDrop {
+		return fmt.Errorf("--assume-carry-commit and --assume-drop-commit cannot be used together")
 	}
 
 	dirMap["operator-controller"] = o.operatorControllerDir
@@ -624,11 +629,17 @@ func detectCarryCommits(ctx context.Context, logger *logrus.Entry, repo, dir, co
 			})
 			messageMatches := upstreamCommitRegex.FindStringSubmatch(info.Message)
 			if len(messageMatches) == 0 || len(messageMatches[0]) == 0 {
-				if !opts.assumeCarry {
+				if !opts.assumeCarry && !opts.assumeDrop {
 					return fmt.Errorf("unexpected commit message: %s", info.Message)
 				}
-				logger.WithField("message", info.Message).Info("unepxected commit message, assuming carry commit")
-				info.Message = "UPSTREAM: <carry>: " + info.Message
+				assumedHeadline := "UPSTREAM: <carry>: "
+				assumedCommitType := "carry"
+				if opts.assumeDrop {
+					assumedHeadline = "UPSTREAM: <drop>: "
+					assumedCommitType = "drop"
+				}
+				logger.WithField("message", info.Message).Infof("unexpected commit message, assuming %s commit", assumedCommitType)
+				info.Message = assumedHeadline + info.Message
 				messageMatches = upstreamCommitRegex.FindStringSubmatch(info.Message)
 			}
 

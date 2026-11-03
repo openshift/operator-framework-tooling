@@ -19,9 +19,9 @@ import (
 	"github.com/openshift/operator-framework-tooling/pkg/flags"
 	"github.com/openshift/operator-framework-tooling/pkg/internal"
 	"github.com/sirupsen/logrus"
-	"k8s.io/test-infra/prow/cmd/generic-autobumper/bumper"
-	"k8s.io/test-infra/prow/config/secret"
-	"k8s.io/test-infra/prow/labels"
+	"sigs.k8s.io/prow/cmd/generic-autobumper/bumper"
+	"sigs.k8s.io/prow/pkg/config/secret"
+	"sigs.k8s.io/prow/pkg/labels"
 )
 
 const (

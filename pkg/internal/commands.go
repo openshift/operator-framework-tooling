@@ -16,7 +16,18 @@ import (
 )
 
 func RunBingo(ctx context.Context, logger *logrus.Entry) error {
-	var err error
+	bingoDir, err := os.Stat(".bingo")
+	if os.IsNotExist(err) {
+		logger.Info("skipping bingo: .bingo directory does not exist")
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("could not stat .bingo directory: %w", err)
+	}
+	if !bingoDir.IsDir() {
+		return fmt.Errorf(".bingo is not a directory")
+	}
+
 	backoff := []time.Duration{0, 10, 30, 60, 120, 240}
 	for _, b := range backoff {
 		time.Sleep(b * time.Second)

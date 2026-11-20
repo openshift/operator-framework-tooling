@@ -1,7 +1,5 @@
 default: build
 
-include .bingo/Variables.mk
-
 .PHONY: test
 test:
 	go test -mod=mod ./...
@@ -11,5 +9,5 @@ build:
 	go build -o ./ -mod=mod ./cmd/...
 
 .PHONY: lint
-lint: $(GOLANGCI_LINT)
-	$(GOLANGCI_LINT) run $(GOLANGCI_LINT_ARGS)
+lint:
+	go tool golangci-lint run $(GOLANGCI_LINT_ARGS)
